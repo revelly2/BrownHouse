@@ -144,12 +144,17 @@ function buildFallbackPlan(
 
 async function generateWithAI(
   profile: UserProfile,
-  exercises: ExerciseRow[]
+  exercises: ExerciseRow[],
+  recentPlans: string[] = [],
+  preferences?: Record<string, any>
 ): Promise<WorkoutPlanPayload | null> {
   const apiKey = Deno.env.get("AI_API_KEY");
   const apiUrl =
     Deno.env.get("AI_API_URL") ?? "https://api.openai.com/v1/chat/completions";
-  const model = Deno.env.get("AI_MODEL") ?? "gpt-4o-mini";
+  let model = Deno.env.get("AI_MODEL") ?? "gpt-4o-mini";
+  if (model === "gemini-1.5-flash") {
+    model = "gemini-3.5-flash";
+  }
 
   if (!apiKey) {
     console.log(
@@ -177,51 +182,142 @@ async function generateWithAI(
   "generated_at": "ISO timestamp"
 }`;
 
+  const recentPlansText = recentPlans.length > 0 
+    ? `\nIMPORTANT: The user has recently completed these workout plans: "${recentPlans.join('", "')}". DO NOT generate exactly the same plan again. Provide variety and progression.`
+    : "";
+
+  const preferencesText = preferences 
+    ? `
+=== STRICT USER PREFERENCES ===
+You MUST adhere exactly to these constraints in your generated FITT plan:
+- 'fitt.frequency' MUST be exactly based on: ${preferences.daysPerWeek || 'Any'}
+- 'fitt.time' MUST be exactly based on: ${preferences.sessionLength || 'Any'}
+- 'goal' MUST reflect: ${preferences.goal || 'Any'}
+- 'difficulty' MUST reflect: ${preferences.level || 'Any'}
+===============================
+`
+    : "";
+
   const userPrompt = `Create a workout plan for this user:
 - Name: ${profile.first_name} ${profile.last_name}
 - Height: ${profile.height_cm ?? "not provided"} cm
 - Weight: ${profile.weight_kg ?? "not provided"} kg
 - BMI: ${bmi}
-- Fitness Goal: ${profile.fitness_goal ?? "General fitness"}
+- Overall Profile Goal: ${profile.fitness_goal ?? "General fitness"}
+${recentPlansText}
+${preferencesText}
 
 Available exercises in our gym: ${exerciseNames}
 
-Generate a balanced, safe plan using only the exercises listed above. Prioritize exercises matching the user's goal.`;
+Generate a balanced, safe plan using only the exercises listed above. Prioritize exercises matching the user's goal.
+CRITICAL: If strict user preferences are provided above, your JSON output MUST perfectly match their requested frequency, time, difficulty, and goal!`;
 
   try {
-    const response = await fetch(apiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: 0.7,
-        max_tokens: 2000,
-        response_format: { type: "json_object" },
-      }),
-    });
+    let response;
+    let isGemini = apiUrl.includes("generativelanguage.googleapis.com") || model.toLowerCase().includes("gemini");
 
-    if (!response.ok) {
-      console.error(`AI API responded with ${response.status}`);
-      return null;
+    if (isGemini) {
+      // Construct native Gemini URL
+      let finalUrl = apiUrl;
+      if (apiUrl.includes("openai/chat/completions")) {
+         // Fix the URL if we previously forced it to the OpenAI proxy
+         finalUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+      } else if (!apiUrl.includes("generateContent")) {
+         finalUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+      }
+      
+      // Append API key to URL
+      if (!finalUrl.includes("key=")) {
+         finalUrl += finalUrl.includes("?") ? `&key=${apiKey}` : `?key=${apiKey}`;
+      }
+
+      response = await fetch(finalUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          system_instruction: {
+            parts: [{ text: systemPrompt }]
+          },
+          contents: [{
+            role: "user",
+            parts: [{ text: userPrompt }]
+          }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: 0.7
+          }
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Gemini API Error ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+      const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!content) {
+        throw new Error("Gemini API returned empty content.");
+      }
+
+      let cleanContent = content;
+      const firstBrace = cleanContent.indexOf("{");
+      const lastBrace = cleanContent.lastIndexOf("}");
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
+          cleanContent = cleanContent.substring(firstBrace, lastBrace + 1);
+      }
+
+      const parsed = JSON.parse(cleanContent) as WorkoutPlanPayload;
+      parsed.generated_at = new Date().toISOString();
+      return parsed;
+      
+    } else {
+      // Standard OpenAI format
+      response = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          temperature: 0.7,
+          max_tokens: 2000,
+          response_format: { type: "json_object" },
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`AI API Error ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) {
+        throw new Error("AI API returned empty content.");
+      }
+
+      let cleanContent = content;
+      const firstBrace = cleanContent.indexOf("{");
+      const lastBrace = cleanContent.lastIndexOf("}");
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
+          cleanContent = cleanContent.substring(firstBrace, lastBrace + 1);
+      }
+
+      const parsed = JSON.parse(cleanContent) as WorkoutPlanPayload;
+      parsed.generated_at = new Date().toISOString();
+      return parsed;
     }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
-    if (!content) return null;
-
-    const parsed = JSON.parse(content) as WorkoutPlanPayload;
-    parsed.generated_at = new Date().toISOString();
-    return parsed;
-  } catch (error) {
+  } catch (error: any) {
     console.error("AI generation failed:", error);
-    return null;
+    throw error;
   }
 }
 
@@ -294,9 +390,47 @@ serve(async (req: Request) => {
       );
     }
 
-    // Generate plan — try AI first, fall back to rule-based
-    let plan = await generateWithAI(profile as UserProfile, exercises);
+    // Fetch user's recent plans to avoid duplicates
+    const { data: recentPlansData } = await supabase
+      .from("workout_plans")
+      .select("description")
+      .eq("client_id", user.id)
+      .order("creation_date", { ascending: false })
+      .limit(3);
+    
+    const recentPlans = (recentPlansData ?? []).map((p: any) => p.description);
+
+    // Try to parse preferences from body
+    let preferences = undefined;
+    try {
+      const bodyText = await req.text();
+      if (bodyText) {
+        const bodyJson = JSON.parse(bodyText);
+        preferences = bodyJson.preferences;
+      }
+    } catch (e) {
+      console.log("No valid JSON body found, proceeding without explicit preferences.");
+    }
+
+    // Generate plan — try AI first
+    let plan;
+    try {
+      plan = await generateWithAI(profile as UserProfile, exercises, recentPlans, preferences);
+    } catch (e: any) {
+      console.log("AI generation failed with error:", e.message);
+      return new Response(JSON.stringify({ error: "AI generation failed: " + e.message }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (!plan) {
+      if (preferences) {
+        return new Response(JSON.stringify({ error: "AI generation returned null without a specific error." }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       console.log("Using deterministic fallback engine.");
       plan = buildFallbackPlan(profile as UserProfile, exercises);
     }
@@ -317,7 +451,7 @@ serve(async (req: Request) => {
     console.error("Edge function error:", error);
     return new Response(
       JSON.stringify({ error: "Internal server error" }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });

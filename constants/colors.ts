@@ -1,83 +1,97 @@
 // ============================================================================
 // Color Constants — Design System
-// Premium, modern color palette for the Gym Reservation App
+// Premium, modern color palette for the Gym Reservation App (Halid Treasury Theme)
 // ============================================================================
 
-const tintColorLight = "#6C63FF";
-const tintColorDark = "#8B83FF";
+const tintColor = "#FBBF24"; // Yellow
 
 export const Colors = {
   // ---- Brand Colors ----
-  primary: "#6C63FF",
-  primaryLight: "#8B83FF",
-  primaryDark: "#4A42D4",
-  secondary: "#00D9A6",
-  secondaryLight: "#33E4BC",
-  secondaryDark: "#00B88A",
-  accent: "#FF6B6B",
-  accentLight: "#FF8E8E",
-  accentDark: "#E04545",
+  primary: "#FBBF24", // Yellow
+  primaryLight: "#FCD34D",
+  primaryDark: "#D97706",
+  secondary: "#9CA3AF", // Grey
+  secondaryLight: "#D1D5DB",
+  secondaryDark: "#4B5563",
+  accent: "#F87171", // Soft Red
+  accentLight: "#FCA5A5",
+  accentDark: "#DC2626",
 
   // ---- Status Colors ----
-  success: "#00D9A6",
-  warning: "#FFB84D",
-  error: "#FF6B6B",
-  info: "#63B3ED",
+  success: "#10B981",
+  warning: "#FBBF24", // Yellow
+  error: "#EF4444",
+  info: "#3B82F6",
 
   // ---- Equipment Status ----
-  available: "#00D9A6",
-  maintenance: "#FFB84D",
-  occupied: "#FF6B6B",
+  available: "#10B981",
+  maintenance: "#FBBF24",
+  occupied: "#EF4444",
 
   // ---- Reservation Status ----
-  confirmed: "#6C63FF",
-  cancelled: "#FF6B6B",
-  completed: "#00D9A6",
+  confirmed: "#10B981",
+  cancelled: "#EF4444",
+  completed: "#10B981",
 
-  // ---- Light Theme ----
+  // ---- Main Theme (Premium Dark) ----
+  background: "#000000",
+  surface: "#1C1C1E",
+  surfaceElevated: "#2C2C2E",
+  border: "#3A3A3C",
+  borderLight: "#48484A",
+  text: "#F3F4F6",
+  textSecondary: "#9CA3AF",
+  textTertiary: "#6B7280",
+  tint: tintColor,
+  icon: "#9CA3AF",
+  tabIconDefault: "#6B7280",
+  tabIconSelected: tintColor,
+  cardShadow: "rgba(0, 0, 0, 0.5)",
+  overlay: "rgba(0, 0, 0, 0.8)",
+
+  // ---- Legacy compatibility (if needed) ----
   light: {
-    text: "#1A1A2E",
-    textSecondary: "#6B7280",
-    textTertiary: "#9CA3AF",
-    background: "#F8F9FE",
-    surface: "#FFFFFF",
-    surfaceElevated: "#FFFFFF",
-    border: "#E5E7EB",
-    borderLight: "#F3F4F6",
-    tint: tintColorLight,
-    icon: "#6B7280",
-    tabIconDefault: "#9CA3AF",
-    tabIconSelected: tintColorLight,
-    cardShadow: "rgba(0, 0, 0, 0.08)",
-    overlay: "rgba(0, 0, 0, 0.5)",
-  },
-
-  // ---- Dark Theme ----
-  dark: {
-    text: "#F8F9FE",
+    // Keep dark mode colors mapped to light for now since this is a global aesthetic
+    text: "#F3F4F6",
     textSecondary: "#9CA3AF",
     textTertiary: "#6B7280",
-    background: "#0F0F1A",
-    surface: "#1A1A2E",
-    surfaceElevated: "#252540",
-    border: "#2D2D4A",
-    borderLight: "#1F1F35",
-    tint: tintColorDark,
+    background: "#000000",
+    surface: "#1C1C1E",
+    surfaceElevated: "#2C2C2E",
+    border: "#3A3A3C",
+    borderLight: "#48484A",
+    tint: tintColor,
     icon: "#9CA3AF",
     tabIconDefault: "#6B7280",
-    tabIconSelected: tintColorDark,
-    cardShadow: "rgba(0, 0, 0, 0.3)",
-    overlay: "rgba(0, 0, 0, 0.7)",
+    tabIconSelected: tintColor,
+    cardShadow: "rgba(0, 0, 0, 0.5)",
+    overlay: "rgba(0, 0, 0, 0.8)",
+  },
+  dark: {
+    text: "#F3F4F6",
+    textSecondary: "#9CA3AF",
+    textTertiary: "#6B7280",
+    background: "#000000",
+    surface: "#1C1C1E",
+    surfaceElevated: "#2C2C2E",
+    border: "#3A3A3C",
+    borderLight: "#48484A",
+    tint: tintColor,
+    icon: "#9CA3AF",
+    tabIconDefault: "#6B7280",
+    tabIconSelected: tintColor,
+    cardShadow: "rgba(0, 0, 0, 0.5)",
+    overlay: "rgba(0, 0, 0, 0.8)",
   },
 
   // ---- Gradient Presets ----
   gradients: {
-    primary: ["#6C63FF", "#8B83FF"],
-    secondary: ["#00D9A6", "#33E4BC"],
-    accent: ["#FF6B6B", "#FF8E8E"],
-    dark: ["#1A1A2E", "#252540"],
-    cardGlow: ["rgba(108, 99, 255, 0.15)", "rgba(108, 99, 255, 0)"],
-    heroOverlay: ["rgba(15, 15, 26, 0.8)", "rgba(15, 15, 26, 0.4)"],
+    primary: ["#FCD34D", "#FBBF24"],
+    secondary: ["#D1D5DB", "#9CA3AF"],
+    accent: ["#FCA5A5", "#F87171"],
+    dark: ["#000000", "#1C1C1E"],
+    cardGlow: ["rgba(251, 191, 36, 0.15)", "rgba(251, 191, 36, 0)"],
+    heroOverlay: ["rgba(0, 0, 0, 0.8)", "rgba(0, 0, 0, 0.4)"],
   },
 } as const;
 
@@ -89,20 +103,20 @@ export const Typography = {
     bold: "System",
   },
   fontSize: {
-    xs: 11,
-    sm: 13,
-    base: 15,
-    md: 17,
+    xs: 10,
+    sm: 12,
+    base: 14,
+    md: 16,
     lg: 20,
-    xl: 24,
-    "2xl": 30,
-    "3xl": 36,
-    "4xl": 48,
+    xl: 23,
+    "2xl": 32,
+    "3xl": 43,
+    "4xl": 54,
   },
   lineHeight: {
-    tight: 1.2,
-    normal: 1.5,
-    relaxed: 1.75,
+    tight: 1.1,
+    normal: 1.4,
+    relaxed: 1.6,
   },
 } as const;
 
@@ -125,6 +139,6 @@ export const Radius = {
   sm: 6,
   md: 10,
   lg: 14,
-  xl: 20,
+  xl: 17, // Halid Treasury card radius
   full: 9999,
 } as const;

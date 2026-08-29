@@ -3,11 +3,9 @@
 // Initializes @supabase/supabase-js with Expo SecureStore for token persistence
 // ============================================================================
 
-import "react-native-url-polyfill/dist/polyfill";
 import { createClient } from "@supabase/supabase-js";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
-import { Database } from "./types";
 
 // Secure storage adapter for Supabase Auth tokens
 const ExpoSecureStoreAdapter = {
@@ -42,7 +40,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-export const supabase = createClient<Database>(
+export const supabase = createClient(
   supabaseUrl ?? "https://placeholder.supabase.co",
   supabaseAnonKey ?? "placeholder-key",
   {
@@ -50,7 +48,7 @@ export const supabase = createClient<Database>(
       storage: ExpoSecureStoreAdapter,
       autoRefreshToken: true,
       persistSession: true,
-      detectSessionInUrl: false, // Prevents issues on mobile
+      detectSessionInUrl: Platform.OS === "web", // Allow capturing token from URL fragment on web
     },
     realtime: {
       params: {

@@ -12,6 +12,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Image,
 } from "react-native";
 import { Link, router } from "expo-router";
 import { Input } from "../../components/ui/Input";
@@ -27,8 +28,10 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [agreeTerms, setAgreeTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [generalError, setGeneralError] = useState<string | null>(null);
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -40,11 +43,14 @@ export default function RegisterScreen() {
     else if (password.length < 6) newErrors.password = "Minimum 6 characters";
     if (password !== confirmPassword)
       newErrors.confirmPassword = "Passwords do not match";
+    if (!agreeTerms) newErrors.terms = "You must agree to the terms";
+    
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleRegister = async () => {
+    setGeneralError(null);
     if (!validate()) return;
     setLoading(true);
     try {
@@ -53,20 +59,24 @@ export default function RegisterScreen() {
         last_name: lastName.trim(),
         role: "client",
       });
+      
       if (error) {
+        setGeneralError(error.message);
         Alert.alert("Registration Failed", error.message);
       } else {
-        Alert.alert(
-          "Account Created",
-          "Please check your email to verify your account, then sign in.",
-          [{ text: "OK", onPress: () => router.replace("/(auth)/login") }]
-        );
+        // Proceed to onboarding flow
+        router.push("/(auth)/onboarding/step1");
       }
     } catch (err) {
+      setGeneralError("An unexpected error occurred.");
       Alert.alert("Error", "An unexpected error occurred.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleGoogleSignUp = () => {
+    Alert.alert("Google Sign Up", "Google Sign Up is not yet implemented.");
   };
 
   return (
@@ -81,16 +91,26 @@ export default function RegisterScreen() {
         {/* Hero */}
         <View style={styles.hero}>
           <View style={styles.logoContainer}>
-            <Text style={styles.logoIcon}>💪</Text>
+            <Image
+              source={require("../../assets/icon.png")}
+              style={styles.logo}
+              resizeMode="contain"
+            />
           </View>
           <Text style={styles.title}>Create Account</Text>
           <Text style={styles.subtitle}>
-            Join our gym community and start your fitness journey
+            Please enter your details to sign up
           </Text>
         </View>
 
         {/* Form */}
         <View style={styles.form}>
+          {generalError && (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorBannerText}>{generalError}</Text>
+            </View>
+          )}
+
           <View style={styles.nameRow}>
             <Input
               label="First Name"
@@ -147,6 +167,19 @@ export default function RegisterScreen() {
             error={errors.confirmPassword}
           />
 
+          <View style={styles.termsContainer}>
+            <TouchableOpacity 
+              style={[styles.checkbox, agreeTerms && styles.checkboxChecked]} 
+              onPress={() => setAgreeTerms(!agreeTerms)}
+            >
+              {agreeTerms && <Text style={styles.checkIcon}>✓</Text>}
+            </TouchableOpacity>
+            <Text style={styles.termsText}>
+              I agree to the <Text style={styles.termsLink}>Terms & Conditions</Text>
+            </Text>
+          </View>
+          {errors.terms && <Text style={styles.termsError}>{errors.terms}</Text>}
+
           <Button
             title="Create Account"
             onPress={handleRegister}
@@ -157,11 +190,26 @@ export default function RegisterScreen() {
             style={styles.registerButton}
           />
 
+          <View style={styles.dividerContainer}>
+            <View style={styles.divider} />
+            <Text style={styles.dividerText}>or sign up with</Text>
+            <View style={styles.divider} />
+          </View>
+
+          <Button
+            title="Continue with Google"
+            onPress={handleGoogleSignUp}
+            variant="outline"
+            fullWidth
+            size="lg"
+            style={styles.googleButton}
+          />
+
           <View style={styles.footer}>
             <Text style={styles.footerText}>Already have an account? </Text>
             <Link href="/(auth)/login" asChild>
               <TouchableOpacity>
-                <Text style={styles.footerLink}>Sign In</Text>
+                <Text style={styles.footerLink}>Log In</Text>
               </TouchableOpacity>
             </Link>
           </View>
@@ -174,7 +222,7 @@ export default function RegisterScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.light.background,
+    backgroundColor: 'transparent',
   },
   scroll: {
     flexGrow: 1,
@@ -184,31 +232,39 @@ const styles = StyleSheet.create({
   },
   hero: {
     alignItems: "center",
-    marginBottom: Spacing["2xl"],
+    marginBottom: Spacing.xl,
+    marginTop: Spacing.xl,
   },
   logoContainer: {
     width: 80,
     height: 80,
-    borderRadius: Radius.xl,
-    backgroundColor: "rgba(0, 217, 166, 0.1)",
+    borderRadius: 40,
+    backgroundColor: "#FFFFFF",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: Spacing.lg,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  logoIcon: {
-    fontSize: 36,
+  logo: {
+    width: 56,
+    height: 56,
   },
   title: {
-    fontSize: Typography.fontSize["2xl"],
+    fontSize: Typography.fontSize["3xl"],
     fontWeight: "800",
-    color: Colors.light.text,
-    marginBottom: Spacing.sm,
+    color: Colors.text,
+    marginBottom: Spacing.xs,
+    textAlign: "center",
   },
   subtitle: {
     fontSize: Typography.fontSize.base,
-    color: Colors.light.textSecondary,
-    textAlign: "center",
+    color: Colors.textSecondary,
     lineHeight: Typography.fontSize.base * Typography.lineHeight.normal,
+    textAlign: "center",
   },
   form: {
     width: "100%",
@@ -225,21 +281,93 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontWeight: "600",
   },
+  termsContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    marginRight: Spacing.sm,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  checkboxChecked: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  checkIcon: {
+    color: Colors.background,
+    fontSize: 12,
+    fontWeight: "bold",
+  },
+  termsText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textSecondary,
+  },
+  termsLink: {
+    color: Colors.primary,
+    fontWeight: "600",
+  },
+  termsError: {
+    color: Colors.error,
+    fontSize: Typography.fontSize.xs,
+    marginBottom: Spacing.md,
+  },
   registerButton: {
-    marginTop: Spacing.sm,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.xl,
+  },
+  dividerContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: Spacing.xl,
+  },
+  divider: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.border,
+  },
+  dividerText: {
+    color: Colors.textTertiary,
+    paddingHorizontal: Spacing.md,
+    fontSize: Typography.fontSize.sm,
+  },
+  googleButton: {
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
   },
   footer: {
     flexDirection: "row",
     justifyContent: "center",
-    marginTop: Spacing.xl,
+    marginTop: Spacing["2xl"],
   },
   footerText: {
     fontSize: Typography.fontSize.sm,
-    color: Colors.light.textSecondary,
+    color: Colors.textSecondary,
   },
   footerLink: {
     fontSize: Typography.fontSize.sm,
     color: Colors.primary,
     fontWeight: "700",
+  },
+  errorBanner: {
+    backgroundColor: "rgba(255, 107, 107, 0.12)",
+    borderWidth: 1.5,
+    borderColor: Colors.error,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.base,
+  },
+  errorBannerText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.error,
+    fontWeight: "600",
+    textAlign: "center",
   },
 });

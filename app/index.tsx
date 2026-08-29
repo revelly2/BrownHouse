@@ -1,22 +1,43 @@
-// ============================================================================
-// Index — Entry Redirect
-// Routes to auth or dashboard based on session & role
-// ============================================================================
-
-import React, { useEffect } from "react";
-import { View, ActivityIndicator, StyleSheet } from "react-native";
+import React, { useEffect, useRef } from "react";
+import { View, StyleSheet, Animated, Image } from "react-native";
 import { Redirect } from "expo-router";
 import { useAuth } from "../lib/auth";
 import { Colors } from "../constants/colors";
 
 export default function Index() {
   const { session, role, loading, initialized } = useAuth();
+  const pulseAnim = useRef(new Animated.Value(0.9)).current;
+
+  useEffect(() => {
+    if (!initialized || loading) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.1,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 0.9,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    }
+  }, [initialized, loading]);
 
   // Show loading spinner while initializing
   if (!initialized || loading) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+        <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+          <Image
+            source={require("../assets/icon.png")}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+        </Animated.View>
       </View>
     );
   }
@@ -28,10 +49,10 @@ export default function Index() {
 
   // Role-based redirect
   if (role === "admin" || role === "trainer") {
-    return <Redirect href="/(admin)/dashboard" />;
+    return <Redirect href="/admin/dashboard" />;
   }
 
-  return <Redirect href="/(client)/dashboard" />;
+  return <Redirect href="/client/dashboard" />;
 }
 
 const styles = StyleSheet.create({
@@ -39,6 +60,11 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: Colors.light.background,
+    backgroundColor: 'transparent',
+  },
+  logo: {
+    width: 100,
+    height: 100,
+    borderRadius: 20,
   },
 });

@@ -1,5 +1,6 @@
 // ============================================================================
 // Card Component — Premium Elevated Surface
+// Supports: default, elevated, outlined, glass, glassElevated
 // ============================================================================
 
 import React, { PropsWithChildren } from "react";
@@ -8,7 +9,7 @@ import { Colors, Radius, Spacing } from "../../constants/colors";
 
 interface CardProps extends PropsWithChildren {
   style?: ViewStyle;
-  variant?: "default" | "elevated" | "outlined";
+  variant?: "default" | "elevated" | "outlined" | "glass" | "glassElevated";
   padding?: "none" | "sm" | "md" | "lg";
 }
 
@@ -34,28 +35,34 @@ export function Card({
 
 const styles = StyleSheet.create({
   base: {
-    borderRadius: Radius.lg,
+    borderRadius: Radius.xl, // 17px
     overflow: "hidden",
   },
 
   // ---- Variants ----
   default: {
     backgroundColor: Colors.light.surface,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
   },
   elevated: {
-    backgroundColor: Colors.light.surface,
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 6,
+    backgroundColor: Colors.light.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
   },
   outlined: {
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+
+  // ---- Glass variants are deprecated in Halid Treasury, mapping to solid ----
+  glass: {
+    backgroundColor: Colors.light.surface,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  glassElevated: {
     backgroundColor: Colors.light.surface,
     borderWidth: 1,
     borderColor: Colors.light.border,

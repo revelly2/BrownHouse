@@ -57,7 +57,7 @@ export function Input({
             rightIcon ? { paddingRight: 0 } : undefined,
             style,
           ]}
-          placeholderTextColor={Colors.light.textTertiary}
+          placeholderTextColor={Colors.textTertiary}
           onFocus={(e) => {
             setFocused(true);
             props.onFocus?.(e);
@@ -93,22 +93,22 @@ const styles = StyleSheet.create({
   label: {
     fontSize: Typography.fontSize.sm,
     fontWeight: "600",
-    color: Colors.light.text,
+    color: Colors.text,
     marginBottom: Spacing.xs + 2,
   },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.light.background,
-    borderWidth: 1.5,
-    borderColor: Colors.light.border,
+    backgroundColor: Colors.surface, // Should be #181d24
+    borderWidth: 1,
+    borderColor: Colors.border, // #293039
     borderRadius: Radius.md,
     minHeight: 48,
     paddingHorizontal: Spacing.md,
   },
   inputWrapperFocused: {
     borderColor: Colors.primary,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: Colors.background, // Match page background when focused
   },
   inputWrapperError: {
     borderColor: Colors.error,
@@ -116,8 +116,9 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: Typography.fontSize.base,
-    color: Colors.light.text,
+    color: Colors.text,
     paddingVertical: Spacing.sm,
+    outlineStyle: "none" as any,
   },
   iconLeft: {
     marginRight: Spacing.sm,
@@ -132,7 +133,7 @@ const styles = StyleSheet.create({
   },
   hint: {
     fontSize: Typography.fontSize.xs,
-    color: Colors.light.textTertiary,
+    color: Colors.textTertiary,
     marginTop: Spacing.xs,
   },
 });

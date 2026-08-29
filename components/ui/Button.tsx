@@ -140,10 +140,10 @@ const styles = StyleSheet.create({
 
   // ---- Text ----
   text: {
-    fontWeight: "600",
+    fontWeight: "800", // Extra bold as in Halid
   },
   text_primary: {
-    color: "#FFFFFF",
+    color: "#101319", // Dark text on mint green background
   },
   text_secondary: {
     color: "#FFFFFF",

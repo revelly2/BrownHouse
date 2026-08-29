@@ -24,6 +24,7 @@ export interface Profile {
   profile_picture_url: string | null;
   height_cm: number | null;
   weight_kg: number | null;
+  target_weight_kg: number | null;
   fitness_goal: string | null;
   role: UserRole;
   created_at: string;
@@ -144,6 +145,14 @@ export interface Notification {
   created_at: string;
 }
 
+export interface MeasurementHistory {
+  id: string;
+  client_id: string;
+  weight_kg: number;
+  height_cm: number | null;
+  measured_at: string;
+}
+
 // ---- Supabase Database Type Map ----
 
 export interface Database {
@@ -235,6 +244,14 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Omit<Notification, "id" | "created_at">>;
+      };
+      measurement_history: {
+        Row: MeasurementHistory;
+        Insert: Omit<MeasurementHistory, "id" | "measured_at"> & {
+          id?: string;
+          measured_at?: string;
+        };
+        Update: Partial<Omit<MeasurementHistory, "id">>;
       };
     };
   };
