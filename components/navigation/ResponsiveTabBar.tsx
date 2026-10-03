@@ -1,13 +1,16 @@
 import React from "react";
-import { View, Text, StyleSheet, Platform, TouchableOpacity, useWindowDimensions } from "react-native";
+import { View, Text, StyleSheet, Platform, TouchableOpacity, useWindowDimensions, Image } from "react-native";
 import { Colors, Spacing, Radius } from "../../constants/colors";
+import { useAuth } from "../../lib/auth";
+import { Icon } from "../ui/Icon";
 
 // A Custom Sidebar for Desktop/Web users
 export function DesktopSidebar({ state, descriptors, navigation }: any) {
+  const { signOut } = useAuth();
   return (
     <View style={styles.sidebar}>
       <View style={styles.logoContainer}>
-        <Text style={styles.logoText}>balneg<Text style={styles.logoDot}>.</Text></Text>
+        <Text style={styles.logoText}>BROWNHOUSE GYM</Text>
       </View>
       
       <View style={styles.navItemsContainer}>
@@ -15,7 +18,13 @@ export function DesktopSidebar({ state, descriptors, navigation }: any) {
           const { options } = descriptors[route.key];
           
           // Respect the href: null option (e.g. for hidden tabs like workout-form)
-          if (options.href === null) return null;
+          if (
+            options.href === null || 
+            options.tabBarItemStyle?.display === 'none' ||
+            options.tabBarButton === null
+          ) {
+            return null;
+          }
           
           const isFocused = state.index === index;
           
@@ -57,6 +66,13 @@ export function DesktopSidebar({ state, descriptors, navigation }: any) {
           );
         })}
       </View>
+      
+      <View style={styles.bottomContainer}>
+        <TouchableOpacity style={styles.logoutBtn} onPress={signOut}>
+          <Icon name="log-out" size={20} color={Colors.error || "#EF4444"} />
+          <Text style={styles.logoutText}>Logout</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -74,9 +90,9 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: 250,
-    backgroundColor: "rgba(0, 0, 0, 0.95)", // dark glass background
+    backgroundColor: "rgba(10, 10, 12, 0.65)",
     borderRightWidth: 1,
-    borderRightColor: "rgba(255, 255, 255, 0.08)",
+    borderRightColor: "rgba(255, 255, 255, 0.15)",
     paddingVertical: Spacing["3xl"],
     paddingHorizontal: Spacing.lg,
     zIndex: 100, // ensure it floats above content
@@ -90,15 +106,15 @@ const styles = StyleSheet.create({
   logoContainer: {
     paddingHorizontal: Spacing.md,
     marginBottom: Spacing["4xl"],
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
   },
   logoText: {
-    fontSize: 26,
-    fontWeight: "800",
-    color: Colors.text,
-    letterSpacing: -1,
-  },
-  logoDot: {
-    color: Colors.primary,
+    fontSize: 20,
+    fontWeight: "900",
+    color: Colors.textTertiary,
+    letterSpacing: 1,
   },
   navItemsContainer: {
     flex: 1,
@@ -128,5 +144,25 @@ const styles = StyleSheet.create({
   },
   sidebarItemTextFocused: {
     color: Colors.text,
+  },
+  bottomContainer: {
+    paddingTop: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.08)",
+    marginTop: "auto",
+  },
+  logoutBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    borderRadius: Radius.lg,
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    gap: Spacing.md,
+  },
+  logoutText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.error || "#EF4444",
   },
 });

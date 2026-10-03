@@ -1,23 +1,23 @@
 // ============================================================================
-// Admin Tab Layout — Glassmorphic Bottom Tab Navigation
+// Cashier Tab Layout — Glassmorphic Bottom Tab Navigation
 // ============================================================================
 
 import React, { useEffect } from "react";
 import { Tabs, router } from "expo-router";
 import { View, Text, StyleSheet, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors, Typography, Spacing, Radius } from "../../constants/colors";
+import { Colors } from "../../constants/colors";
 import { Icon, IconName } from "../../components/ui/Icon";
 import { DesktopSidebar, useIsDesktop } from "../../components/navigation/ResponsiveTabBar";
 import { useAuth } from "../../lib/auth";
 
-// Clean minimal icon set
 const TAB_ICONS: Record<string, { icon: IconName; label: string }> = {
-  dashboard: { icon: "ranking", label: "Overview" },
-  users: { icon: "chat-square-2", label: "Users" },
-  "equipment-manage": { icon: "dumbbells", label: "Equipment" },
-  "reservations-manage": { icon: "clipboard-check", label: "Bookings" },
-  settings: { icon: "settings-3", label: "Settings" },
+  dashboard: { icon: "clipboard-check", label: "Cashier" },
+  sales: { icon: "course-up", label: "Sales Data" },
+  products: { icon: "checklist", label: "Products" },
+  logs: { icon: "notebook", label: "System Logs" },
+  users: { icon: "running-2", label: "Members" },
+  equipment: { icon: "dumbbells", label: "Equipment" },
 };
 
 function TabIcon({ name, focused }: { name: string; focused: boolean }) {
@@ -34,7 +34,7 @@ function TabIcon({ name, focused }: { name: string; focused: boolean }) {
   );
 }
 
-export default function AdminLayout() {
+export default function CashierLayout() {
   const insets = useSafeAreaInsets();
   const isDesktop = useIsDesktop();
   const { session, initialized } = useAuth();
@@ -59,9 +59,7 @@ export default function AdminLayout() {
         tabBarInactiveTintColor: Colors.light.textTertiary,
         tabBarStyle: [
           styles.tabBar,
-          {
-            bottom: insets.bottom > 0 ? insets.bottom : 24,
-          },
+          { bottom: insets.bottom > 0 ? insets.bottom : 24 },
         ],
         tabBarLabelStyle: styles.tabLabel,
       }}
@@ -69,46 +67,43 @@ export default function AdminLayout() {
       <Tabs.Screen
         name="dashboard"
         options={{
-          title: "Overview",
-          tabBarIcon: ({ focused }) => (
-            <TabIcon name="dashboard" focused={focused} />
-          ),
+          title: "Cashier",
+          tabBarIcon: ({ focused }) => <TabIcon name="dashboard" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="sales"
+        options={{
+          title: "Sales Data",
+          tabBarIcon: ({ focused }) => <TabIcon name="sales" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="products"
+        options={{
+          title: "Products",
+          tabBarIcon: ({ focused }) => <TabIcon name="products" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="logs"
+        options={{
+          title: "System Logs",
+          tabBarIcon: ({ focused }) => <TabIcon name="logs" focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="users"
         options={{
-          title: "Users",
-          tabBarIcon: ({ focused }) => (
-            <TabIcon name="users" focused={focused} />
-          ),
+          title: "Members",
+          tabBarIcon: ({ focused }) => <TabIcon name="users" focused={focused} />,
         }}
       />
       <Tabs.Screen
-        name="equipment-manage"
+        name="equipment"
         options={{
           title: "Equipment",
-          tabBarIcon: ({ focused }) => (
-            <TabIcon name="equipment-manage" focused={focused} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="reservations-manage"
-        options={{
-          title: "Bookings",
-          tabBarIcon: ({ focused }) => (
-            <TabIcon name="reservations-manage" focused={focused} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: "Settings",
-          tabBarIcon: ({ focused }) => (
-            <TabIcon name="settings" focused={focused} />
-          ),
+          tabBarIcon: ({ focused }) => <TabIcon name="equipment" focused={focused} />,
         }}
       />
     </Tabs>

@@ -9,7 +9,11 @@ import {
   StyleSheet,
   FlatList,
   RefreshControl,
+  Modal,
+  TouchableOpacity,
+  Image,
 } from "react-native";
+import { ToastManager } from "../../components/ui/Toast";
 import { supabase } from "../../lib/supabase";
 import { Card } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
@@ -23,6 +27,8 @@ export default function UsersScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
+  const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
+  const [updating, setUpdating] = useState(false);
 
   const fetchUsers = async () => {
     const { data, error } = await supabase
@@ -36,6 +42,29 @@ export default function UsersScreen() {
 
   useEffect(() => {
     fetchUsers();
+
+    const channel = supabase
+      .channel("public:profiles")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "profiles" },
+        (payload) => {
+          if (payload.eventType === "UPDATE") {
+            setUsers((prev) =>
+              prev.map((u) => (u.id === payload.new.id ? { ...u, ...payload.new } as Profile : u))
+            );
+          } else if (payload.eventType === "INSERT") {
+            setUsers((prev) => [payload.new as Profile, ...prev]);
+          } else if (payload.eventType === "DELETE") {
+            setUsers((prev) => prev.filter((u) => u.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   useEffect(() => {
@@ -58,6 +87,24 @@ export default function UsersScreen() {
     setRefreshing(true);
     await fetchUsers();
     setRefreshing(false);
+  };
+
+  const updateRole = async (newRole: string) => {
+    if (!selectedUser) return;
+    setUpdating(true);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ role: newRole })
+      .eq("id", selectedUser.id);
+      
+    setUpdating(false);
+    if (error) {
+      ToastManager.show("Error", error.message, "error");
+    } else {
+      ToastManager.show("Success", `User role updated to ${newRole}`, "success");
+      setSelectedUser(null);
+      fetchUsers(); // Refresh the list
+    }
   };
 
   const getRoleVariant = (role: string) => {
@@ -83,7 +130,8 @@ export default function UsersScreen() {
   };
 
   const renderItem = ({ item }: { item: Profile }) => (
-    <Card variant="glass" style={styles.card}>
+    <TouchableOpacity activeOpacity={0.8} onPress={() => setSelectedUser(item)}>
+      <Card variant="glass" style={styles.card}>
       <View style={styles.cardRow}>
         <View
           style={[
@@ -91,19 +139,32 @@ export default function UsersScreen() {
             { borderColor: getRoleAccent(item.role) },
           ]}
         >
-          <Text
-            style={[
-              styles.avatarText,
-              { color: getRoleAccent(item.role) },
-            ]}
-          >
-            {(item.first_name?.[0] ?? "U").toUpperCase()}
-          </Text>
+          {item.profile_picture_url ? (
+            <Image 
+              source={{ uri: item.profile_picture_url }} 
+              style={{ width: '100%', height: '100%', borderRadius: 12 }} 
+              resizeMode="cover" 
+            />
+          ) : (
+            <Text
+              style={[
+                styles.avatarText,
+                { color: getRoleAccent(item.role) },
+              ]}
+            >
+              {(item.first_name?.[0] ?? "U").toUpperCase()}
+            </Text>
+          )}
         </View>
         <View style={styles.cardInfo}>
           <Text style={styles.userName}>
             {item.first_name ?? ""} {item.last_name ?? ""}
           </Text>
+          {item.email && (
+            <Text style={[styles.userMeta, { marginBottom: 2, color: Colors.textSecondary }]}>
+              {item.email}
+            </Text>
+          )}
           <Text style={styles.userMeta}>
             Joined {new Date(item.joined_date).toLocaleDateString()}
           </Text>
@@ -116,6 +177,7 @@ export default function UsersScreen() {
         <Badge label={item.role} variant={getRoleVariant(item.role)} size="sm" />
       </View>
     </Card>
+    </TouchableOpacity>
   );
 
   return (
@@ -158,6 +220,53 @@ export default function UsersScreen() {
           </View>
         }
       />
+
+      {/* Role Update Modal */}
+      <Modal
+        visible={!!selectedUser}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setSelectedUser(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Change Role</Text>
+            <Text style={styles.modalSubtitle}>
+              Select a new role for {selectedUser?.first_name} {selectedUser?.last_name}
+            </Text>
+
+            <View style={styles.modalOptions}>
+              {["admin", "trainer", "cashier", "client"].map((roleOption) => (
+                <TouchableOpacity
+                  key={roleOption}
+                  style={[
+                    styles.modalOptionBtn,
+                    selectedUser?.role === roleOption && styles.modalOptionBtnActive,
+                  ]}
+                  onPress={() => updateRole(roleOption)}
+                  disabled={updating || selectedUser?.role === roleOption}
+                >
+                  <Text
+                    style={[
+                      styles.modalOptionText,
+                      selectedUser?.role === roleOption && styles.modalOptionTextActive,
+                    ]}
+                  >
+                    {roleOption.charAt(0).toUpperCase() + roleOption.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity
+              style={styles.modalCloseBtn}
+              onPress={() => setSelectedUser(null)}
+            >
+              <Text style={styles.modalCloseText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -272,6 +381,66 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: Typography.fontSize.sm,
     color: Colors.light.textTertiary,
+    fontWeight: "500",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing.xl,
+  },
+  modalContent: {
+    backgroundColor: "#1C1C1E", // Dark card background
+    width: "100%",
+    maxWidth: 400,
+    borderRadius: Radius.xl,
+    padding: Spacing.xl,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  modalTitle: {
+    fontSize: Typography.fontSize.lg,
+    fontWeight: "600",
+    color: Colors.text,
+    marginBottom: 4,
+  },
+  modalSubtitle: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textSecondary,
+    marginBottom: Spacing.xl,
+  },
+  modalOptions: {
+    gap: Spacing.sm,
+    marginBottom: Spacing.xl,
+  },
+  modalOptionBtn: {
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  modalOptionBtnActive: {
+    backgroundColor: "rgba(230, 200, 79, 0.15)", // Primary slightly transparent
+    borderColor: Colors.primary,
+  },
+  modalOptionText: {
+    color: Colors.textSecondary,
+    fontWeight: "500",
+    textAlign: "center",
+  },
+  modalOptionTextActive: {
+    color: Colors.primary,
+    fontWeight: "700",
+  },
+  modalCloseBtn: {
+    paddingVertical: Spacing.md,
+    alignItems: "center",
+  },
+  modalCloseText: {
+    color: Colors.textTertiary,
     fontWeight: "500",
   },
 });

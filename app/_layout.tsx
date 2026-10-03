@@ -16,6 +16,12 @@ if (Platform.OS === "web") {
     document.body.style.backgroundColor = "#000000";
     const style = document.createElement("style");
     style.innerHTML = `
+      html, body, #root {
+        height: 100%;
+        width: 100%;
+        display: flex;
+        flex: 1;
+      }
       div[aria-hidden="true"] {
         display: none !important;
       }

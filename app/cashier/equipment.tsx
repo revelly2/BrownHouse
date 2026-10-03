@@ -572,33 +572,17 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.7)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: Spacing.xl,
+    justifyContent: "flex-end",
   },
   modalContent: {
     backgroundColor: Colors.light.surface,
-    borderRadius: Radius.xl,
+    borderTopLeftRadius: Radius.xl,
+    borderTopRightRadius: Radius.xl,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.06)",
+    borderBottomWidth: 0,
     padding: Spacing.xl,
-    width: "100%",
-    maxWidth: 600,
-    maxHeight: "90%",
-    // Floating effect
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 10,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 10,
-    ...Platform.select({
-      web: {
-        boxShadow: '0px 20px 40px rgba(0, 0, 0, 0.4)',
-      } as any,
-    }),
+    maxHeight: "85%",
   },
   modalHandle: {
     width: 36,

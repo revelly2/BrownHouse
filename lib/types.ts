@@ -20,6 +20,7 @@ export interface Profile {
   first_name: string | null;
   last_name: string | null;
   phone_number: string | null;
+  email?: string | null;
   joined_date: string;
   profile_picture_url: string | null;
   height_cm: number | null;

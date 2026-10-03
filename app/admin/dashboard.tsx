@@ -14,6 +14,7 @@ import {
   Platform,
   Animated,
   Pressable,
+  Image,
 } from "react-native";
 import { router } from "expo-router";
 import { supabase } from "../../lib/supabase";
@@ -22,7 +23,7 @@ import { Card } from "../../components/ui/Card";
 import { Radius, Colors, Typography, Spacing } from "../../constants/colors";
 import { getLocalDateString } from "../../lib/utils";
 import { LineChart } from "react-native-chart-kit";
-import { Icon } from "../../components/ui/Icon";
+import { Calendar, SlidersHorizontal, LogOut, TrendingUp, UserPlus, PlusCircle } from "lucide-react-native";
 
 // --- Animated Components ---
 
@@ -134,6 +135,7 @@ interface Profile {
   first_name: string;
   last_name: string;
   created_at: string;
+  profile_picture_url: string | null;
 }
 
 export default function AdminDashboard() {
@@ -154,7 +156,6 @@ export default function AdminDashboard() {
   const [recentMembers, setRecentMembers] = useState<Profile[]>([]);
   const [weeklyTrend, setWeeklyTrend] = useState<{ labels: string[]; data: number[] }>({ labels: [], data: [] });
   const [refreshing, setRefreshing] = useState(false);
-  const [chartWidth, setChartWidth] = useState(0);
 
   const fetchStats = async () => {
     const today = new Date();
@@ -215,11 +216,12 @@ export default function AdminDashboard() {
           counts[r.reservation_date]++;
         }
       });
-      const labels = Object.keys(counts).map(d => {
+      const sortedKeys = Object.keys(counts).sort();
+      const labels = sortedKeys.map(d => {
         const dateObj = new Date(d);
         return `${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
       });
-      const data = Object.values(counts);
+      const data = sortedKeys.map(d => counts[d]);
       setWeeklyTrend({ labels, data });
     }
   };
@@ -235,6 +237,19 @@ export default function AdminDashboard() {
   };
 
   const [activeFilter, setActiveFilter] = useState("12 months");
+
+  const contentMaxWidth = 1400;
+  const paddingHorizontal = Spacing.xl * 2; // 48
+  const rightColumnWidth = 320;
+  const columnGap = Spacing["3xl"]; // 40
+
+  let calculatedChartWidth = width - paddingHorizontal;
+  if (calculatedChartWidth > contentMaxWidth - paddingHorizontal) {
+    calculatedChartWidth = contentMaxWidth - paddingHorizontal;
+  }
+  if (isDesktop) {
+    calculatedChartWidth = calculatedChartWidth - rightColumnWidth - columnGap;
+  }
 
   return (
     <ScrollView
@@ -262,12 +277,16 @@ export default function AdminDashboard() {
             ))}
           </View>
           <TouchableOpacity style={styles.actionBtn}>
-            <Icon name="calendar" size={16} color={Colors.textSecondary} />
+            <Calendar size={16} color={Colors.textSecondary} />
             <Text style={styles.actionBtnText}>Aug 16, 2026 – Aug 16, 2027</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.actionBtn}>
-            <Icon name="sliders-horizontal" size={16} color={Colors.textSecondary} />
+            <SlidersHorizontal size={16} color={Colors.textSecondary} />
             <Text style={styles.actionBtnText}>Filters</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionBtn} onPress={signOut}>
+            <LogOut size={16} color={Colors.error || "#EF4444"} />
+            <Text style={[styles.actionBtnText, { color: Colors.error || "#EF4444" }]}>Logout</Text>
           </TouchableOpacity>
         </View>
       </FadeInView>
@@ -279,16 +298,16 @@ export default function AdminDashboard() {
         <View style={styles.leftColumn}>
           
           {/* Chart Section */}
-          <FadeInView delay={100} style={styles.chartContainer} onLayout={(e: any) => setChartWidth(e.nativeEvent.layout.width)}>
+          <FadeInView delay={100} style={styles.chartContainer}>
             <Text style={styles.sectionTitleSmall}>Active Bookings (Trend)</Text>
-            {chartWidth > 0 && weeklyTrend.data.length > 0 ? (
+            {calculatedChartWidth > 0 && weeklyTrend.data.length > 0 ? (
               <View style={{ marginTop: Spacing.xl }}>
                 <LineChart
                   data={{
                     labels: weeklyTrend.labels,
                     datasets: [{ data: weeklyTrend.data }],
                   }}
-                  width={chartWidth}
+                  width={calculatedChartWidth}
                   height={220}
                   chartConfig={{
                     backgroundColor: "transparent",
@@ -329,7 +348,7 @@ export default function AdminDashboard() {
               <TouchableCard style={[styles.actionCard, { flex: 1 }]}>
                 <Card style={styles.actionCardInner}>
                   <View style={styles.actionCardIcon}>
-                    <Icon name="user-plus" size={20} color={Colors.text} />
+                    <UserPlus size={20} color={Colors.text} />
                   </View>
                   <View style={styles.actionCardText}>
                     <Text style={styles.actionCardTitle}>Create your first member</Text>
@@ -341,7 +360,7 @@ export default function AdminDashboard() {
               <TouchableCard style={[styles.actionCard, { flex: 1 }]}>
                 <Card style={styles.actionCardInner}>
                   <View style={styles.actionCardIcon}>
-                    <Icon name="plus-circle" size={20} color={Colors.text} />
+                    <PlusCircle size={20} color={Colors.text} />
                   </View>
                   <View style={styles.actionCardText}>
                     <Text style={styles.actionCardTitle}>Create a new reservation</Text>
@@ -364,7 +383,14 @@ export default function AdminDashboard() {
               {recentMembers.map((member) => (
                 <Card key={member.id} style={styles.memberCard}>
                   <View style={styles.memberCardAvatar}>
-                    <Text style={styles.memberCardAvatarText}>{member.first_name.charAt(0) || "U"}</Text>
+                    {member.profile_picture_url ? (
+                      <Image 
+                        source={{ uri: member.profile_picture_url }} 
+                        style={{ width: '100%', height: '100%', borderRadius: 24 }} 
+                      />
+                    ) : (
+                      <Text style={styles.memberCardAvatarText}>{member.first_name.charAt(0) || "U"}</Text>
+                    )}
                   </View>
                   <View style={styles.memberCardInfo}>
                     <Text style={styles.memberCardName} numberOfLines={1}>
@@ -392,7 +418,7 @@ export default function AdminDashboard() {
               <View style={styles.statValueRow}>
                 <Text style={styles.statValue}>{stats.totalUsers.toLocaleString()}</Text>
                 <View style={styles.trendPill}>
-                  <Icon name="trending-up" size={12} color={Colors.success} />
+                  <TrendingUp size={12} color={Colors.success} />
                   <Text style={styles.trendText}>+9.2%</Text>
                 </View>
               </View>
@@ -403,7 +429,7 @@ export default function AdminDashboard() {
               <View style={styles.statValueRow}>
                 <Text style={styles.statValue}>{stats.activeReservations.toLocaleString()}</Text>
                 <View style={styles.trendPill}>
-                  <Icon name="trending-up" size={12} color={Colors.success} />
+                  <TrendingUp size={12} color={Colors.success} />
                   <Text style={styles.trendText}>+6.6%</Text>
                 </View>
               </View>
@@ -414,7 +440,7 @@ export default function AdminDashboard() {
               <View style={styles.statValueRow}>
                 <Text style={styles.statValue}>{stats.completedSessions.toLocaleString()}</Text>
                 <View style={styles.trendPill}>
-                  <Icon name="trending-up" size={12} color={Colors.success} />
+                  <TrendingUp size={12} color={Colors.success} />
                   <Text style={styles.trendText}>+8.1%</Text>
                 </View>
               </View>

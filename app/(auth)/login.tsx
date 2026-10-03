@@ -20,8 +20,10 @@ import { Button } from "../../components/ui/Button";
 import { useAuth } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
 import * as WebBrowser from "expo-web-browser";
+import { Download } from "lucide-react-native";
 import { makeRedirectUri } from "expo-auth-session";
 import { Colors, Spacing, Typography, Radius } from "../../constants/colors";
+import { useWindowDimensions, ImageBackground } from "react-native";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -33,6 +35,57 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const [generalError, setGeneralError] = useState<string | null>(null);
+  const [loginImages, setLoginImages] = useState<string[]>([]);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [apkDownloadUrl, setApkDownloadUrl] = useState<string | null>(null);
+  const { width } = useWindowDimensions();
+  const isDesktop = Platform.OS === 'web' && width >= 1024;
+
+  React.useEffect(() => {
+    // Fetch login image URL separately so a missing apk_download_url column won't break it
+    supabase
+      .from("app_settings")
+      .select("login_image_url")
+      .eq("id", "global")
+      .single()
+      .then(({ data, error }) => {
+        if (!error && data?.login_image_url) {
+          let urls: string[] = [];
+          try {
+            const parsed = JSON.parse(data.login_image_url);
+            if (Array.isArray(parsed)) urls = parsed;
+            else urls = [data.login_image_url];
+          } catch (e) {
+            urls = data.login_image_url.split(',').map((url: string) => url.trim()).filter((url: string) => url.length > 0);
+          }
+          if (urls.length > 0) {
+            setLoginImages(urls);
+          }
+        }
+      });
+
+    // Fetch APK download URL safely
+    supabase
+      .from("app_settings")
+      .select("apk_download_url")
+      .eq("id", "global")
+      .single()
+      .then(({ data, error }) => {
+        if (!error && data?.apk_download_url) {
+          setApkDownloadUrl(data.apk_download_url);
+        }
+      });
+  }, []);
+
+  React.useEffect(() => {
+    if (loginImages.length <= 1) return;
+    
+    const interval = setInterval(() => {
+      setCurrentImageIndex((prev) => (prev + 1) % loginImages.length);
+    }, 5000); // Rotate every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [loginImages]);
 
   const validate = (): boolean => {
     const newErrors: typeof errors = {};
@@ -126,26 +179,27 @@ export default function LoginScreen() {
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Hero Section */}
-        <View style={styles.hero}>
-          <View style={styles.logoContainer}>
-            <Image
-              source={require("../../assets/icon.png")}
-              style={styles.logo}
-              resizeMode="contain"
-            />
+      <View style={[styles.mainLayout, isDesktop && styles.mainLayoutDesktop]}>
+        {/* LEFT COLUMN - Form */}
+        <ScrollView
+          contentContainerStyle={[styles.scroll, isDesktop && styles.scrollDesktop]}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Hero Section */}
+          <View style={[styles.hero, isDesktop && { alignItems: 'flex-start' }]}>
+            <View style={[styles.brandWrapper, isDesktop && { alignSelf: 'flex-start' }]}>
+              <View style={styles.brandAccent} />
+              <Text style={styles.brandTextHuge}>
+                BROWN<Text style={styles.brandTextDim}>HOUSE GYM</Text>
+                <Text style={styles.brandDot}>.</Text>
+              </Text>
+            </View>
+            <Text style={[styles.title, isDesktop && { textAlign: 'left' }]}>Log in</Text>
+            <Text style={[styles.subtitle, isDesktop && { textAlign: 'left' }]}>
+              Welcome back! Please enter your details.
+            </Text>
           </View>
-          <Text style={styles.title}>Welcome Back</Text>
-          <Text style={styles.subtitle}>
-            Please enter your details to sign in
-          </Text>
-        </View>
 
-        {/* Form */}
         <View style={styles.form}>
           {generalError && (
             <View style={styles.errorBanner}>
@@ -218,8 +272,48 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </Link>
           </View>
+
+          {apkDownloadUrl && Platform.OS === 'web' && (
+            <View style={{ marginTop: Spacing["3xl"], alignItems: 'center' }}>
+              <Button
+                title="Download Android App (APK)"
+                onPress={() => window.open(apkDownloadUrl, '_blank')}
+                variant="outline"
+                size="md"
+                leftIcon={<Download size={18} color={Colors.primary} />}
+                style={{ borderColor: Colors.primary }}
+                textStyle={{ color: Colors.primary }}
+              />
+            </View>
+          )}
         </View>
-      </ScrollView>
+        </ScrollView>
+
+        {/* RIGHT COLUMN - Image Display (Desktop Only) */}
+        {isDesktop && (
+          <View style={styles.rightColumn}>
+            {loginImages.length > 0 ? (
+              <ImageBackground
+                source={{ uri: loginImages[currentImageIndex] }}
+                style={styles.coverImage}
+                imageStyle={{ resizeMode: 'cover' }}
+              >
+                <View style={styles.coverOverlay} />
+              </ImageBackground>
+            ) : (
+              <View style={styles.fallbackCover}>
+                <Image
+                  source={require("../../assets/icon.png")}
+                  style={{ width: 120, height: 120, opacity: 0.2 }}
+                  resizeMode="contain"
+                />
+                <Text style={styles.fallbackCoverText}>Welcome to your new dashboard</Text>
+                <Text style={styles.fallbackCoverSub}>Sign in to explore changes we've made.</Text>
+              </View>
+            )}
+          </View>
+        )}
+      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -229,34 +323,56 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'transparent',
   },
+  mainLayout: {
+    flex: 1,
+    flexDirection: 'column',
+  },
+  mainLayoutDesktop: {
+    flexDirection: 'row',
+  },
   scroll: {
     flexGrow: 1,
     justifyContent: "center",
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing["3xl"],
   },
+  scrollDesktop: {
+    flex: 1,
+    maxWidth: 600,
+    width: "100%",
+    alignSelf: 'center',
+    paddingHorizontal: 80,
+  },
   hero: {
     alignItems: "center",
     marginBottom: Spacing.xl,
     marginTop: Spacing.xl,
   },
-  logoContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#FFFFFF",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: Spacing.lg,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+  brandWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing["3xl"],
+    marginTop: Spacing.sm,
   },
-  logo: {
-    width: 56,
-    height: 56,
+  brandAccent: {
+    width: 8,
+    height: 48,
+    backgroundColor: Colors.primary,
+    marginRight: Spacing.lg,
+    borderRadius: 4,
+  },
+  brandTextHuge: {
+    fontSize: 52,
+    fontWeight: "900",
+    color: "#FFFFFF", // High contrast white for first part
+    letterSpacing: -2,
+    textTransform: 'uppercase',
+  },
+  brandTextDim: {
+    color: Colors.textTertiary, // Gray for the second part
+  },
+  brandDot: {
+    color: Colors.primary,
   },
   title: {
     fontSize: Typography.fontSize["3xl"],
@@ -337,5 +453,39 @@ const styles = StyleSheet.create({
     color: Colors.error,
     fontWeight: "600",
     textAlign: "center",
+  },
+  rightColumn: {
+    flex: 1,
+    backgroundColor: "#5B42A4", // Default Purple brand color
+    overflow: 'hidden',
+  },
+  coverImage: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'flex-end',
+    padding: Spacing["3xl"],
+  },
+  coverOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.2)",
+  },
+  fallbackCover: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing["3xl"],
+  },
+  fallbackCoverText: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    marginTop: Spacing.xl,
+    textAlign: 'center',
+  },
+  fallbackCoverSub: {
+    fontSize: 16,
+    color: "rgba(255,255,255,0.8)",
+    marginTop: Spacing.sm,
+    textAlign: 'center',
   },
 });

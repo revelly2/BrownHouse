@@ -2,13 +2,14 @@
 // Client Tab Layout — Swiss Glassmorphic Navigation
 // ============================================================================
 
-import React from "react";
-import { Tabs } from "expo-router";
+import React, { useEffect } from "react";
+import { Tabs, router } from "expo-router";
 import { View, StyleSheet, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors, Typography } from "../../constants/colors";
 import { Icon, IconName } from "../../components/ui/Icon";
 import { DesktopSidebar, useIsDesktop } from "../../components/navigation/ResponsiveTabBar";
+import { useAuth } from "../../lib/auth";
 
 interface TabIconProps {
   name: string;
@@ -40,10 +41,18 @@ function TabIcon({ name, focused }: TabIconProps) {
 export default function ClientLayout() {
   const insets = useSafeAreaInsets();
   const isDesktop = useIsDesktop();
+  const { session, initialized } = useAuth();
+
+  useEffect(() => {
+    if (initialized && !session) {
+      router.replace("/(auth)/login");
+    }
+  }, [session, initialized]);
 
   return (
     <Tabs
       sceneContainerStyle={{ 
+        flex: 1,
         backgroundColor: "transparent",
         marginLeft: isDesktop ? 250 : 0 
       }}
@@ -111,6 +120,7 @@ export default function ClientLayout() {
         options={{
           href: null,
           title: "Manual Plan",
+          tabBarItemStyle: { display: 'none' }
         }}
       />
       <Tabs.Screen
@@ -118,6 +128,7 @@ export default function ClientLayout() {
         options={{
           href: null,
           title: "Notifications",
+          tabBarItemStyle: { display: 'none' }
         }}
       />
     </Tabs>

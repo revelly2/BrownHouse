@@ -89,8 +89,12 @@ export default function ClientDashboard() {
 
   // Daily Measurement State
   const [showDailyModal, setShowDailyModal] = useState(false);
+  const [modalMode, setModalMode] = useState<"onboarding" | "daily">("daily");
   const [dailyWeight, setDailyWeight] = useState("");
   const [dailyHeight, setDailyHeight] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [phone, setPhone] = useState("");
   const [savingDaily, setSavingDaily] = useState(false);
 
   const getStorageItem = async (key: string) => {
@@ -138,7 +142,7 @@ export default function ClientDashboard() {
       .from("completed_sessions")
       .select("*", { count: "exact" })
       .eq("client_id", profile.id)
-      .order("completed_at", { ascending: true });
+      .order("date", { ascending: true });
 
     if (sessionData) setCompletedSessions(sessionData);
 
@@ -170,12 +174,22 @@ export default function ClientDashboard() {
 
   const checkDailyMeasurement = async () => {
     if (!profile) return;
+    const isMissingInfo = !profile.first_name || !profile.last_name || !profile.phone_number;
     const today = getLocalDateString();
     const lastDate = await getStorageItem(`last_measurement_${profile.id}`);
     
-    if (lastDate !== today) {
+    if (isMissingInfo) {
       setDailyWeight(profile.weight_kg ? String(profile.weight_kg) : "");
       setDailyHeight(profile.height_cm ? String(profile.height_cm) : "");
+      setFirstName(profile.first_name || "");
+      setLastName(profile.last_name || "");
+      setPhone(profile.phone_number || "");
+      setModalMode("onboarding");
+      setShowDailyModal(true);
+    } else if (lastDate !== today) {
+      setDailyWeight(profile.weight_kg ? String(profile.weight_kg) : "");
+      setDailyHeight(profile.height_cm ? String(profile.height_cm) : "");
+      setModalMode("daily");
       setShowDailyModal(true);
     }
   };
@@ -183,10 +197,17 @@ export default function ClientDashboard() {
   const handleSaveDaily = async () => {
     if (!profile) return;
     setSavingDaily(true);
-    const updates = {
+    
+    const updates: any = {
       weight_kg: dailyWeight ? parseFloat(dailyWeight) : null,
       height_cm: dailyHeight ? parseFloat(dailyHeight) : null,
     };
+    
+    if (modalMode === "onboarding") {
+      updates.first_name = firstName;
+      updates.last_name = lastName;
+      updates.phone_number = phone;
+    }
     
     const { error } = await supabase
       .from("profiles")
@@ -203,12 +224,29 @@ export default function ClientDashboard() {
           height_cm: updates.height_cm,
         });
       }
-      const today = getLocalDateString();
-      await setStorageItem(`last_measurement_${profile.id}`, today);
-      setShowDailyModal(false);
-      fetchDashboardData(); // Refresh history
+      if (modalMode === "onboarding") {
+        // If it was onboarding, just refresh the dashboard data or close modal
+        setShowDailyModal(false);
+        fetchDashboardData();
+        // optionally update the context profile if you have updateProfile in useAuth
+        // but it will trigger a re-render soon enough
+      } else {
+        const today = getLocalDateString();
+        await setStorageItem(`last_measurement_${profile.id}`, today);
+        setShowDailyModal(false);
+        fetchDashboardData(); // Refresh history
+      }
     }
     setSavingDaily(false);
+  };
+  
+  const handleCancelModal = async () => {
+    if (modalMode === "daily" && profile) {
+      // If they skip the daily check, mark it for today so it doesn't pop up again
+      const today = getLocalDateString();
+      await setStorageItem(`last_measurement_${profile.id}`, today);
+    }
+    setShowDailyModal(false);
   };
 
   const prepareChartData = () => {
@@ -247,7 +285,7 @@ export default function ClientDashboard() {
 
     // Filter sessions up to this date
     const sessionsUpToPoint = completedSessions.filter(
-      (s) => new Date(s.completed_at) <= pointDate
+      (s) => new Date(s.date) <= pointDate
     );
 
     const totalTimeMs = sessionsUpToPoint.reduce(
@@ -307,7 +345,7 @@ export default function ClientDashboard() {
         />
       }
     >
-      {/* Daily Measurement Modal */}
+      {/* unified Onboarding / Daily Check Modal */}
       <Modal
         visible={showDailyModal}
         transparent
@@ -317,10 +355,37 @@ export default function ClientDashboard() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Daily Check-In</Text>
-            <Text style={styles.modalSubtitle}>
-              Confirm or update your measurements to keep your metrics accurate.
+            <Text style={styles.modalTitle}>
+              {modalMode === "onboarding" ? "Complete Your Profile" : "Daily Check-in"}
             </Text>
+            <Text style={styles.modalSubtitle}>
+              {modalMode === "onboarding"
+                ? "Please provide your details to continue."
+                : "Confirm or update your measurements to keep your metrics accurate."}
+            </Text>
+
+            {modalMode === "onboarding" && (
+              <View style={{ gap: Spacing.md, marginBottom: Spacing.xl }}>
+                <Input
+                  label="First Name"
+                  placeholder="John"
+                  value={firstName}
+                  onChangeText={setFirstName}
+                />
+                <Input
+                  label="Last Name"
+                  placeholder="Doe"
+                  value={lastName}
+                  onChangeText={setLastName}
+                />
+                <Input
+                  label="Phone Number"
+                  placeholder="123-456-7890"
+                  value={phone}
+                  onChangeText={setPhone}
+                />
+              </View>
+            )}
 
             <View style={styles.modalInputRow}>
               <View style={styles.modalInputWrapper}>
@@ -341,15 +406,24 @@ export default function ClientDashboard() {
               </View>
             </View>
 
-            <Button
-              title="Save Measurements"
-              variant="primary"
-              size="lg"
-              fullWidth
-              loading={savingDaily}
-              onPress={handleSaveDaily}
-              style={{ marginTop: Spacing.sm }}
-            />
+            <View style={{ flexDirection: "row", gap: Spacing.md, marginTop: Spacing.lg }}>
+              {modalMode === "daily" && (
+                <Button
+                  title="Skip"
+                  variant="outline"
+                  onPress={handleCancelModal}
+                  style={{ flex: 1 }}
+                />
+              )}
+              <Button
+                title={modalMode === "onboarding" ? "Save Profile" : "Save Measurements"}
+                variant="primary"
+                loading={savingDaily}
+                onPress={handleSaveDaily}
+                style={{ flex: modalMode === "onboarding" ? undefined : 1 }}
+                disabled={modalMode === "onboarding" && (!firstName || !lastName || !phone)}
+              />
+            </View>
           </View>
         </View>
       </Modal>
