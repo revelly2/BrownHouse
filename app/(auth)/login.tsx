@@ -13,6 +13,7 @@ import {
   TouchableOpacity,
   Alert,
   Image,
+  Modal,
 } from "react-native";
 import { Link, router } from "expo-router";
 import { Input } from "../../components/ui/Input";
@@ -20,7 +21,7 @@ import { Button } from "../../components/ui/Button";
 import { useAuth } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
 import * as WebBrowser from "expo-web-browser";
-import { Download } from "lucide-react-native";
+import { Download, CheckCircle2, X, Mail } from "lucide-react-native";
 import { makeRedirectUri } from "expo-auth-session";
 import { Colors, Spacing, Typography, Radius } from "../../constants/colors";
 import { useWindowDimensions, ImageBackground } from "react-native";
@@ -40,6 +41,50 @@ export default function LoginScreen() {
   const [apkDownloadUrl, setApkDownloadUrl] = useState<string | null>(null);
   const { width } = useWindowDimensions();
   const isDesktop = Platform.OS === 'web' && width >= 1024;
+
+  // Forgot Password State
+  const [forgotModalVisible, setForgotModalVisible] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+
+  const handleSendResetPassword = async () => {
+    if (!resetEmail.trim()) {
+      setResetError("Email address is required.");
+      return;
+    }
+    if (!/\S+@\S+\.\S+/.test(resetEmail.trim())) {
+      setResetError("Please enter a valid email address.");
+      return;
+    }
+
+    setResetError(null);
+    setResetLoading(true);
+
+    try {
+      const redirectUrl = Platform.OS === "web"
+        ? `${window.location.origin}/reset-password`
+        : makeRedirectUri({
+            scheme: "gymreserve",
+            path: "reset-password",
+          });
+
+      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), {
+        redirectTo: redirectUrl,
+      });
+
+      if (error) {
+        setResetError(error.message);
+      } else {
+        setResetSent(true);
+      }
+    } catch (err: any) {
+      setResetError(err.message || "An unexpected error occurred.");
+    } finally {
+      setResetLoading(false);
+    }
+  };
 
   React.useEffect(() => {
     // Fetch login image URL separately so a missing apk_download_url column won't break it
@@ -240,7 +285,14 @@ export default function LoginScreen() {
           />
 
           <View style={styles.forgotPasswordContainer}>
-            <TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => {
+                setResetEmail(email.trim());
+                setResetSent(false);
+                setResetError(null);
+                setForgotModalVisible(true);
+              }}
+            >
               <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
             </TouchableOpacity>
           </View>
@@ -319,6 +371,119 @@ export default function LoginScreen() {
           </View>
         )}
       </View>
+
+      {/* Forgot Password Modal */}
+      <Modal
+        visible={forgotModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setForgotModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            {/* Header */}
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1, paddingRight: Spacing.sm }}>
+                <Text style={styles.modalTitle}>Reset Password</Text>
+                <Text style={styles.modalSubtitle}>
+                  {resetSent
+                    ? "Check your email for instructions."
+                    : "Enter your account email to receive a password reset link."}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setForgotModalVisible(false)}
+                style={styles.modalCloseBtn}
+              >
+                <X size={20} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {resetSent ? (
+              <View style={{ alignItems: "center", paddingVertical: Spacing.lg, gap: Spacing.md }}>
+                <View
+                  style={{
+                    width: 60,
+                    height: 60,
+                    borderRadius: 30,
+                    backgroundColor: "rgba(16, 185, 129, 0.15)",
+                    borderWidth: 1,
+                    borderColor: "rgba(16, 185, 129, 0.4)",
+                    justifyContent: "center",
+                    alignItems: "center",
+                  }}
+                >
+                  <CheckCircle2 size={32} color={Colors.success || "#10B981"} />
+                </View>
+                <Text
+                  style={{
+                    fontSize: 16,
+                    fontWeight: "700",
+                    color: Colors.text,
+                    textAlign: "center",
+                  }}
+                >
+                  Reset Link Sent!
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 13,
+                    color: Colors.textSecondary,
+                    textAlign: "center",
+                    lineHeight: 19,
+                  }}
+                >
+                  We sent a recovery email to{"\n"}
+                  <Text style={{ fontWeight: "700", color: Colors.primary }}>
+                    {resetEmail}
+                  </Text>
+                  . Please check your inbox and spam folder.
+                </Text>
+                <Button
+                  title="Done"
+                  onPress={() => setForgotModalVisible(false)}
+                  fullWidth
+                  size="md"
+                  style={{ marginTop: Spacing.md }}
+                />
+              </View>
+            ) : (
+              <View style={{ gap: Spacing.md, marginTop: Spacing.xs }}>
+                {resetError && (
+                  <View style={styles.modalErrorBanner}>
+                    <Text style={styles.modalErrorText}>{resetError}</Text>
+                  </View>
+                )}
+
+                <Input
+                  label="Email Address"
+                  placeholder="you@example.com"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  value={resetEmail}
+                  onChangeText={setResetEmail}
+                  leftIcon={<Mail size={16} color={Colors.textSecondary} />}
+                />
+
+                <View style={styles.modalActionsRow}>
+                  <Button
+                    title="Cancel"
+                    variant="outline"
+                    onPress={() => setForgotModalVisible(false)}
+                    style={{ flex: 1 }}
+                  />
+                  <Button
+                    title={resetLoading ? "Sending..." : "Send Reset Link"}
+                    onPress={handleSendResetPassword}
+                    loading={resetLoading}
+                    style={{ flex: 1 }}
+                  />
+                </View>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -492,5 +657,68 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.8)",
     marginTop: Spacing.sm,
     textAlign: 'center',
+  },
+
+  /* --- Forgot Password Modal --- */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing.lg,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 440,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.xl,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    padding: Spacing.xl,
+    gap: Spacing.md,
+    ...Platform.select({
+      web: {
+        boxShadow: "0px 20px 40px rgba(0,0,0,0.6)",
+      } as any,
+    }),
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: Colors.text,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  modalCloseBtn: {
+    padding: 6,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  modalErrorBanner: {
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.3)",
+    padding: Spacing.sm,
+    borderRadius: Radius.md,
+  },
+  modalErrorText: {
+    color: Colors.error || "#EF4444",
+    fontSize: 12,
+  },
+  modalActionsRow: {
+    flexDirection: "row",
+    gap: Spacing.md,
+    marginTop: Spacing.xs,
   },
 });
