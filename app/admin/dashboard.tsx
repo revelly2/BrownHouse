@@ -15,15 +15,36 @@ import {
   Animated,
   Pressable,
   Image,
+  Modal,
+  TextInput,
+  ActivityIndicator,
 } from "react-native";
 import { router } from "expo-router";
+import { createClient } from "@supabase/supabase-js";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
 import { Card } from "../../components/ui/Card";
+import { Button } from "../../components/ui/Button";
+import { Input } from "../../components/ui/Input";
+import { ToastManager } from "../../components/ui/Toast";
 import { Radius, Colors, Typography, Spacing } from "../../constants/colors";
 import { getLocalDateString } from "../../lib/utils";
 import { LineChart } from "react-native-chart-kit";
-import { Calendar, SlidersHorizontal, LogOut, TrendingUp, UserPlus, PlusCircle } from "lucide-react-native";
+import {
+  Calendar,
+  SlidersHorizontal,
+  LogOut,
+  TrendingUp,
+  UserPlus,
+  PlusCircle,
+  X,
+  Check,
+  Upload,
+  Clock,
+  Dumbbell,
+  Users,
+  Search,
+} from "lucide-react-native";
 
 // --- Animated Components ---
 
@@ -157,6 +178,294 @@ export default function AdminDashboard() {
   const [weeklyTrend, setWeeklyTrend] = useState<{ labels: string[]; data: number[] }>({ labels: [], data: [] });
   const [refreshing, setRefreshing] = useState(false);
 
+  // --- Create Member Modal State ---
+  const [memberModalVisible, setMemberModalVisible] = useState(false);
+  const [memberModalTab, setMemberModalTab] = useState<"single" | "csv">("single");
+  const [memberFirstName, setMemberFirstName] = useState("");
+  const [memberLastName, setMemberLastName] = useState("");
+  const [memberEmail, setMemberEmail] = useState("");
+  const [memberPhone, setMemberPhone] = useState("");
+  const [memberPassword, setMemberPassword] = useState("password123");
+  const [memberRole, setMemberRole] = useState("client");
+  const [memberCsvText, setMemberCsvText] = useState("");
+  const [memberSubmitting, setMemberSubmitting] = useState(false);
+
+  // --- Create Reservation Modal State ---
+  const [resModalVisible, setResModalVisible] = useState(false);
+  const [allClients, setAllClients] = useState<any[]>([]);
+  const [allEquipmentList, setAllEquipmentList] = useState<any[]>([]);
+  const [resClientId, setResClientId] = useState("");
+  const [resEquipId, setResEquipId] = useState("");
+  const [resDate, setResDate] = useState(getLocalDateString(new Date()));
+  const [resSlot, setResSlot] = useState<{ start: string; end: string } | null>(null);
+  const [resNotes, setResNotes] = useState("");
+  const [bookedSlots, setBookedSlots] = useState<string[]>([]);
+  const [resSubmitting, setResSubmitting] = useState(false);
+  const [clientSearch, setClientSearch] = useState("");
+  const [equipSearch, setEquipSearch] = useState("");
+
+  const timeSlots = [
+    { start: "06:30", end: "07:30" },
+    { start: "07:30", end: "08:30" },
+    { start: "08:30", end: "09:30" },
+    { start: "09:30", end: "10:30" },
+    { start: "10:30", end: "11:30" },
+    { start: "11:30", end: "12:30" },
+    { start: "12:30", end: "13:30" },
+    { start: "13:30", end: "14:30" },
+    { start: "14:30", end: "15:30" },
+    { start: "15:30", end: "16:30" },
+    { start: "16:30", end: "17:30" },
+    { start: "17:30", end: "18:30" },
+    { start: "18:30", end: "19:30" },
+    { start: "19:30", end: "20:30" },
+  ];
+
+  const openReservationModal = async () => {
+    setResModalVisible(true);
+    setResSlot(null);
+    setResNotes("");
+    setClientSearch("");
+    setEquipSearch("");
+    const todayStr = getLocalDateString(new Date());
+    setResDate(todayStr);
+
+    const [clientsRes, equipRes] = await Promise.all([
+      supabase.from("profiles").select("id, first_name, last_name, role").order("first_name"),
+      supabase.from("equipment").select("id, name, type, status").order("name"),
+    ]);
+
+    if (clientsRes.data) {
+      setAllClients(clientsRes.data);
+      if (clientsRes.data.length > 0) {
+        setResClientId(clientsRes.data[0].id);
+      }
+    }
+    if (equipRes.data) {
+      setAllEquipmentList(equipRes.data);
+      if (equipRes.data.length > 0) {
+        setResEquipId(equipRes.data[0].id);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!resEquipId || !resDate || !resModalVisible) return;
+    const fetchBooked = async () => {
+      const { data } = await supabase
+        .from("reservations")
+        .select("start_time")
+        .eq("equipment_id", resEquipId)
+        .eq("reservation_date", resDate)
+        .eq("status", "confirmed");
+      if (data) {
+        setBookedSlots(data.map((r) => r.start_time.slice(0, 5)));
+      }
+    };
+    fetchBooked();
+  }, [resEquipId, resDate, resModalVisible]);
+
+  const handleCreateMember = async () => {
+    if (!memberFirstName.trim() || !memberLastName.trim()) {
+      ToastManager.show("Required", "Please provide first and last name.", "error");
+      return;
+    }
+    if (!memberEmail.trim()) {
+      ToastManager.show("Required", "Please provide a valid email address.", "error");
+      return;
+    }
+
+    setMemberSubmitting(true);
+    try {
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+      const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+      const tempClient = createClient(supabaseUrl, supabaseAnonKey, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+        },
+      });
+
+      const { data, error } = await tempClient.auth.signUp({
+        email: memberEmail.trim(),
+        password: memberPassword.trim() || "password123",
+        options: {
+          data: {
+            first_name: memberFirstName.trim(),
+            last_name: memberLastName.trim(),
+            role: memberRole,
+          },
+        },
+      });
+
+      if (error) {
+        ToastManager.show("Error", error.message, "error");
+        setMemberSubmitting(false);
+        return;
+      }
+
+      if (data.user?.id && memberPhone.trim()) {
+        await supabase
+          .from("profiles")
+          .update({ phone_number: memberPhone.trim() })
+          .eq("id", data.user.id);
+      }
+
+      ToastManager.show(
+        "Success",
+        `Created member: ${memberFirstName} ${memberLastName}`,
+        "success"
+      );
+      setMemberModalVisible(false);
+      setMemberFirstName("");
+      setMemberLastName("");
+      setMemberEmail("");
+      setMemberPhone("");
+      setMemberPassword("password123");
+      setMemberRole("client");
+      fetchStats();
+    } catch (e: any) {
+      ToastManager.show("Error", e.message || "Failed to create member.", "error");
+    } finally {
+      setMemberSubmitting(false);
+    }
+  };
+
+  const handleImportCsv = async () => {
+    if (!memberCsvText.trim()) {
+      ToastManager.show("Required", "Please paste CSV lines first.", "error");
+      return;
+    }
+
+    setMemberSubmitting(true);
+    const lines = memberCsvText
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+
+    let successCount = 0;
+    let failCount = 0;
+
+    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+    const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+    const tempClient = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+    });
+
+    for (const line of lines) {
+      if (line.toLowerCase().startsWith("first_name") || line.toLowerCase().startsWith("firstname")) {
+        continue;
+      }
+      const parts = line.split(",").map((p) => p.trim());
+      if (parts.length >= 3) {
+        const [fn, ln, em, ph, ro] = parts;
+        try {
+          const { data, error } = await tempClient.auth.signUp({
+            email: em,
+            password: "password123",
+            options: {
+              data: {
+                first_name: fn,
+                last_name: ln,
+                role: ro || "client",
+              },
+            },
+          });
+          if (error) {
+            failCount++;
+          } else {
+            successCount++;
+            if (data.user?.id && ph) {
+              await supabase
+                .from("profiles")
+                .update({ phone_number: ph })
+                .eq("id", data.user.id);
+            }
+          }
+        } catch {
+          failCount++;
+        }
+      }
+    }
+
+    setMemberSubmitting(false);
+    if (successCount > 0) {
+      ToastManager.show(
+        "Import Finished",
+        `Added ${successCount} member${successCount > 1 ? "s" : ""}${failCount > 0 ? ` (${failCount} failed)` : ""}.`,
+        "success"
+      );
+      setMemberModalVisible(false);
+      setMemberCsvText("");
+      fetchStats();
+    } else {
+      ToastManager.show("Error", "Could not import rows. Check format: First,Last,Email", "error");
+    }
+  };
+
+  const handleCreateReservation = async () => {
+    if (!resClientId) {
+      ToastManager.show("Required", "Please choose a member.", "error");
+      return;
+    }
+    if (!resEquipId) {
+      ToastManager.show("Required", "Please choose gym equipment.", "error");
+      return;
+    }
+    if (!resDate) {
+      ToastManager.show("Required", "Please select a date.", "error");
+      return;
+    }
+    if (!resSlot) {
+      ToastManager.show("Required", "Please select a time slot.", "error");
+      return;
+    }
+
+    setResSubmitting(true);
+    try {
+      const { data: clash } = await supabase
+        .from("reservations")
+        .select("id")
+        .eq("equipment_id", resEquipId)
+        .eq("reservation_date", resDate)
+        .eq("start_time", resSlot.start)
+        .eq("status", "confirmed");
+
+      if (clash && clash.length > 0) {
+        ToastManager.show("Slot Taken", "This equipment is already booked for this slot.", "error");
+        setResSubmitting(false);
+        return;
+      }
+
+      const { error } = await supabase.from("reservations").insert({
+        client_id: resClientId,
+        equipment_id: resEquipId,
+        reservation_date: resDate,
+        start_time: resSlot.start,
+        end_time: resSlot.end,
+        status: "confirmed",
+        notes: resNotes.trim() || "Manual booking by Admin",
+      });
+
+      if (error) {
+        ToastManager.show("Error", error.message, "error");
+      } else {
+        ToastManager.show("Success", "Reservation confirmed!", "success");
+        setResModalVisible(false);
+        fetchStats();
+      }
+    } catch (e: any) {
+      ToastManager.show("Error", e.message || "Failed to book reservation.", "error");
+    } finally {
+      setResSubmitting(false);
+    }
+  };
+
   const fetchStats = async () => {
     const today = new Date();
     const sevenDaysAgo = new Date();
@@ -252,7 +561,8 @@ export default function AdminDashboard() {
   }
 
   return (
-    <ScrollView
+    <>
+      <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
       refreshControl={
@@ -345,7 +655,10 @@ export default function AdminDashboard() {
           <FadeInView delay={200} style={styles.sectionGroup}>
             <Text style={styles.sectionTitle}>Quick Actions</Text>
             <View style={[styles.cardsRow, !isDesktop && styles.cardsRowMobile]}>
-              <TouchableCard style={[styles.actionCard, { flex: 1 }]}>
+              <TouchableCard
+                style={[styles.actionCard, { flex: 1 }]}
+                onPress={() => setMemberModalVisible(true)}
+              >
                 <Card style={styles.actionCardInner}>
                   <View style={styles.actionCardIcon}>
                     <UserPlus size={20} color={Colors.text} />
@@ -357,7 +670,10 @@ export default function AdminDashboard() {
                 </Card>
               </TouchableCard>
               
-              <TouchableCard style={[styles.actionCard, { flex: 1 }]}>
+              <TouchableCard
+                style={[styles.actionCard, { flex: 1 }]}
+                onPress={openReservationModal}
+              >
                 <Card style={styles.actionCardInner}>
                   <View style={styles.actionCardIcon}>
                     <PlusCircle size={20} color={Colors.text} />
@@ -494,6 +810,344 @@ export default function AdminDashboard() {
       </View>
       <View style={{ height: Spacing['4xl'] }} />
     </ScrollView>
+
+      {/* ========================================================================= */}
+      {/* Create / Import Member Modal */}
+      {/* ========================================================================= */}
+      <Modal
+        visible={memberModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMemberModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            {/* Header */}
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Add New Member</Text>
+                <Text style={styles.modalSubtitle}>Register a user or import via CSV</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setMemberModalVisible(false)}
+                style={styles.modalCloseBtn}
+              >
+                <X size={20} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Tabs */}
+            <View style={styles.modalTabs}>
+              <TouchableOpacity
+                style={[styles.modalTab, memberModalTab === "single" && styles.modalTabActive]}
+                onPress={() => setMemberModalTab("single")}
+              >
+                <UserPlus size={16} color={memberModalTab === "single" ? Colors.primary : Colors.textSecondary} />
+                <Text style={[styles.modalTabText, memberModalTab === "single" && styles.modalTabTextActive]}>
+                  Single Member
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalTab, memberModalTab === "csv" && styles.modalTabActive]}
+                onPress={() => setMemberModalTab("csv")}
+              >
+                <Upload size={16} color={memberModalTab === "csv" ? Colors.primary : Colors.textSecondary} />
+                <Text style={[styles.modalTabText, memberModalTab === "csv" && styles.modalTabTextActive]}>
+                  Import CSV
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {memberModalTab === "single" ? (
+              <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+                <View style={{ gap: Spacing.sm }}>
+                  <View style={{ flexDirection: "row", gap: Spacing.sm }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.inputLabel}>First Name *</Text>
+                      <Input
+                        placeholder="John"
+                        value={memberFirstName}
+                        onChangeText={setMemberFirstName}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.inputLabel}>Last Name *</Text>
+                      <Input
+                        placeholder="Doe"
+                        value={memberLastName}
+                        onChangeText={setMemberLastName}
+                      />
+                    </View>
+                  </View>
+
+                  <Text style={styles.inputLabel}>Email Address *</Text>
+                  <Input
+                    placeholder="john.doe@example.com"
+                    value={memberEmail}
+                    onChangeText={setMemberEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+
+                  <Text style={styles.inputLabel}>Phone Number</Text>
+                  <Input
+                    placeholder="09123456789"
+                    value={memberPhone}
+                    onChangeText={setMemberPhone}
+                    keyboardType="phone-pad"
+                  />
+
+                  <Text style={styles.inputLabel}>Temporary Password</Text>
+                  <Input
+                    placeholder="password123"
+                    value={memberPassword}
+                    onChangeText={setMemberPassword}
+                    secureTextEntry
+                  />
+
+                  <Text style={styles.inputLabel}>System Role</Text>
+                  <View style={styles.rolePickerRow}>
+                    {["client", "trainer", "cashier", "admin"].map((r) => (
+                      <TouchableOpacity
+                        key={r}
+                        style={[styles.roleChip, memberRole === r && styles.roleChipActive]}
+                        onPress={() => setMemberRole(r)}
+                      >
+                        <Text style={[styles.roleChipText, memberRole === r && styles.roleChipTextActive]}>
+                          {r.charAt(0).toUpperCase() + r.slice(1)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              </ScrollView>
+            ) : (
+              <View style={{ gap: Spacing.md, marginVertical: Spacing.sm }}>
+                <Text style={styles.csvHelperText}>
+                  Paste rows below in the format:{"\n"}
+                  <Text style={{ fontFamily: Platform.OS === "web" ? "monospace" : undefined, color: Colors.primary }}>
+                    FirstName,LastName,Email,Phone,Role
+                  </Text>
+                </Text>
+                <TextInput
+                  style={styles.csvTextArea}
+                  placeholder={`John,Doe,john@example.com,09123456789,client\nJane,Smith,jane@example.com,09876543210,client`}
+                  placeholderTextColor={Colors.textTertiary}
+                  multiline
+                  numberOfLines={6}
+                  value={memberCsvText}
+                  onChangeText={setMemberCsvText}
+                />
+              </View>
+            )}
+
+            {/* Modal Actions */}
+            <View style={styles.modalActionsRow}>
+              <Button
+                title="Cancel"
+                variant="outline"
+                onPress={() => setMemberModalVisible(false)}
+                style={{ flex: 1 }}
+              />
+              <Button
+                title={memberSubmitting ? "Processing..." : memberModalTab === "single" ? "Create Member" : "Import CSV"}
+                variant="primary"
+                onPress={memberModalTab === "single" ? handleCreateMember : handleImportCsv}
+                disabled={memberSubmitting}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ========================================================================= */}
+      {/* Create Reservation Modal */}
+      {/* ========================================================================= */}
+      <Modal
+        visible={resModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setResModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { maxWidth: 620 }]}>
+            {/* Header */}
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Manual Reservation</Text>
+                <Text style={styles.modalSubtitle}>Book equipment session on behalf of a user</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setResModalVisible(false)}
+                style={styles.modalCloseBtn}
+              >
+                <X size={20} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 480 }} showsVerticalScrollIndicator={false}>
+              <View style={{ gap: Spacing.md, paddingVertical: Spacing.xs }}>
+                {/* 1. Member Picker */}
+                <View>
+                  <Text style={styles.inputLabel}>1. Select Member *</Text>
+                  <Input
+                    placeholder="Search member name..."
+                    value={clientSearch}
+                    onChangeText={setClientSearch}
+                    containerStyle={{ marginBottom: Spacing.xs }}
+                  />
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row", marginTop: 4 }}>
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      {allClients
+                        .filter((c) =>
+                          `${c.first_name} ${c.last_name}`
+                            .toLowerCase()
+                            .includes(clientSearch.toLowerCase())
+                        )
+                        .slice(0, 15)
+                        .map((c) => {
+                          const isSel = resClientId === c.id;
+                          return (
+                            <TouchableOpacity
+                              key={c.id}
+                              style={[styles.memberSelectChip, isSel && styles.memberSelectChipActive]}
+                              onPress={() => setResClientId(c.id)}
+                            >
+                              <Users size={12} color={isSel ? Colors.primaryDark : Colors.textSecondary} />
+                              <Text style={[styles.memberSelectText, isSel && styles.memberSelectTextActive]}>
+                                {c.first_name} {c.last_name}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                    </View>
+                  </ScrollView>
+                </View>
+
+                {/* 2. Equipment Picker */}
+                <View>
+                  <Text style={styles.inputLabel}>2. Select Equipment *</Text>
+                  <Input
+                    placeholder="Filter machines (e.g. Treadmill, Bench)..."
+                    value={equipSearch}
+                    onChangeText={setEquipSearch}
+                    containerStyle={{ marginBottom: Spacing.xs }}
+                  />
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row", marginTop: 4 }}>
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      {allEquipmentList
+                        .filter((e) => e.name.toLowerCase().includes(equipSearch.toLowerCase()))
+                        .map((e) => {
+                          const isSel = resEquipId === e.id;
+                          return (
+                            <TouchableOpacity
+                              key={e.id}
+                              style={[
+                                styles.memberSelectChip,
+                                isSel && styles.memberSelectChipActive,
+                                e.status === "maintenance" && { opacity: 0.5 },
+                              ]}
+                              onPress={() => setResEquipId(e.id)}
+                            >
+                              <Dumbbell size={12} color={isSel ? Colors.primaryDark : Colors.textSecondary} />
+                              <Text style={[styles.memberSelectText, isSel && styles.memberSelectTextActive]}>
+                                {e.name} ({e.status})
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                    </View>
+                  </ScrollView>
+                </View>
+
+                {/* 3. Date & Time */}
+                <View style={{ flexDirection: "row", gap: Spacing.sm }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>3. Date (YYYY-MM-DD) *</Text>
+                    <Input
+                      placeholder="YYYY-MM-DD"
+                      value={resDate}
+                      onChangeText={setResDate}
+                    />
+                  </View>
+                </View>
+
+                {/* 4. Time Slot Grid */}
+                <View>
+                  <Text style={styles.inputLabel}>4. Select Time Slot *</Text>
+                  <View style={styles.slotGrid}>
+                    {timeSlots.map((slot) => {
+                      const isBooked = bookedSlots.includes(slot.start);
+                      const isSelected = resSlot?.start === slot.start;
+                      return (
+                        <TouchableOpacity
+                          key={slot.start}
+                          style={[
+                            styles.slotBtn,
+                            isSelected && styles.slotBtnSelected,
+                            isBooked && styles.slotBtnBooked,
+                          ]}
+                          disabled={isBooked}
+                          onPress={() => setResSlot(slot)}
+                        >
+                          <Clock
+                            size={12}
+                            color={
+                              isBooked
+                                ? Colors.textTertiary
+                                : isSelected
+                                ? Colors.primaryDark
+                                : Colors.textSecondary
+                            }
+                          />
+                          <Text
+                            style={[
+                              styles.slotText,
+                              isSelected && styles.slotTextSelected,
+                              isBooked && styles.slotTextBooked,
+                            ]}
+                          >
+                            {slot.start} - {slot.end}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* 5. Notes */}
+                <View>
+                  <Text style={styles.inputLabel}>5. Notes (Optional)</Text>
+                  <Input
+                    placeholder="Walk-in, assisted session, trainer notes..."
+                    value={resNotes}
+                    onChangeText={setResNotes}
+                  />
+                </View>
+              </View>
+            </ScrollView>
+
+            {/* Modal Actions */}
+            <View style={styles.modalActionsRow}>
+              <Button
+                title="Cancel"
+                variant="outline"
+                onPress={() => setResModalVisible(false)}
+                style={{ flex: 1 }}
+              />
+              <Button
+                title={resSubmitting ? "Booking..." : "Confirm Reservation"}
+                variant="primary"
+                onPress={handleCreateReservation}
+                disabled={resSubmitting}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
@@ -823,5 +1477,196 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textTertiary,
     fontStyle: 'italic',
-  }
+  },
+
+  /* --- Modals --- */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing.lg,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 520,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.xl,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    padding: Spacing.xl,
+    gap: Spacing.lg,
+    ...Platform.select({
+      web: {
+        boxShadow: "0px 20px 40px rgba(0,0,0,0.6)",
+      } as any,
+    }),
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: Colors.text,
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  modalCloseBtn: {
+    padding: 6,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  modalTabs: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    backgroundColor: Colors.surfaceElevated,
+    padding: 4,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  modalTab: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 8,
+    borderRadius: Radius.sm,
+  },
+  modalTabActive: {
+    backgroundColor: Colors.surface,
+  },
+  modalTabText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+  },
+  modalTabTextActive: {
+    color: Colors.primary,
+  },
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+    marginBottom: 4,
+    marginTop: 4,
+  },
+  rolePickerRow: {
+    flexDirection: "row",
+    gap: 8,
+    flexWrap: "wrap",
+    marginTop: 4,
+  },
+  roleChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  roleChipActive: {
+    backgroundColor: "rgba(251, 191, 36, 0.15)",
+    borderColor: Colors.primary,
+  },
+  roleChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+  },
+  roleChipTextActive: {
+    color: Colors.primary,
+  },
+  csvHelperText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    lineHeight: 18,
+  },
+  csvTextArea: {
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    color: Colors.text,
+    fontSize: 12,
+    minHeight: 120,
+    textAlignVertical: "top",
+    fontFamily: Platform.OS === "web" ? "monospace" : undefined,
+  },
+  modalActionsRow: {
+    flexDirection: "row",
+    gap: Spacing.md,
+    marginTop: Spacing.xs,
+  },
+  memberSelectChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  memberSelectChipActive: {
+    backgroundColor: "rgba(251, 191, 36, 0.2)",
+    borderColor: Colors.primary,
+  },
+  memberSelectText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+  },
+  memberSelectTextActive: {
+    color: Colors.primary,
+  },
+  slotGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 4,
+  },
+  slotBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  slotBtnSelected: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  slotBtnBooked: {
+    opacity: 0.35,
+    backgroundColor: Colors.surface,
+  },
+  slotText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+  },
+  slotTextSelected: {
+    color: Colors.primaryDark,
+    fontWeight: "700",
+  },
+  slotTextBooked: {
+    color: Colors.textTertiary,
+    textDecorationLine: "line-through",
+  },
 });
