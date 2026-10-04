@@ -139,6 +139,11 @@ export default function LoginScreen() {
         return;
       }
 
+      if (Platform.OS === "web" && data?.url) {
+        window.location.href = data.url;
+        return;
+      }
+
       if (Platform.OS !== "web" && data?.url) {
         const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
 

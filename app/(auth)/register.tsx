@@ -15,6 +15,9 @@ import {
   Image,
 } from "react-native";
 import { Link, router } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
+import { makeRedirectUri } from "expo-auth-session";
+import { supabase } from "../../lib/supabase";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { useAuth } from "../../lib/auth";
@@ -75,8 +78,66 @@ export default function RegisterScreen() {
     }
   };
 
-  const handleGoogleSignUp = () => {
-    Alert.alert("Google Sign Up", "Google Sign Up is not yet implemented.");
+  const handleGoogleSignUp = async () => {
+    try {
+      setLoading(true);
+
+      const redirectUrl = makeRedirectUri({
+        scheme: "gymreserve",
+      });
+
+      const targetRedirect = Platform.OS === "web" ? window.location.origin : redirectUrl;
+
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: targetRedirect,
+          skipBrowserRedirect: Platform.OS !== "web",
+        },
+      });
+
+      if (error) {
+        Alert.alert("Google Sign In Failed", error.message);
+        return;
+      }
+
+      if (Platform.OS === "web" && data?.url) {
+        window.location.href = data.url;
+        return;
+      }
+
+      if (Platform.OS !== "web" && data?.url) {
+        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+
+        if (result.type === "success" && result.url) {
+          const urlParts = result.url.split("#");
+          if (urlParts.length > 1) {
+            const hash = urlParts[1];
+            const params = new URLSearchParams(hash);
+            const accessToken = params.get("access_token");
+            const refreshToken = params.get("refresh_token");
+
+            if (accessToken && refreshToken) {
+              const { error: sessionError } = await supabase.auth.setSession({
+                access_token: accessToken,
+                refresh_token: refreshToken,
+              });
+
+              if (sessionError) {
+                Alert.alert("Session Error", sessionError.message);
+              } else {
+                router.replace("/");
+              }
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      Alert.alert("Error", "An unexpected error occurred during Google sign in.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
