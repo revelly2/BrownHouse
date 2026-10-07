@@ -56,6 +56,16 @@ export interface Exercise {
   created_at: string;
 }
 
+export interface ReservationMetadata {
+  checked_in: boolean;
+  checked_in_at?: string | null;
+  checked_in_by?: string | null;
+  notified_5min_start?: boolean;
+  notified_5min_end?: boolean;
+  auto_cancelled?: boolean;
+  cancel_reason?: string | null;
+}
+
 export interface Reservation {
   id: string;
   client_id: string;
@@ -152,6 +162,51 @@ export interface MeasurementHistory {
   weight_kg: number;
   height_cm: number | null;
   measured_at: string;
+}
+
+export interface Membership {
+  id: string;
+  name: string;
+  price: number;
+  duration_days: number;
+  description: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClientMembership {
+  id: string;
+  client_id: string;
+  membership_id: string;
+  start_date: string;
+  end_date: string;
+  status: "active" | "expired" | "cancelled";
+  created_at: string;
+  updated_at: string;
+  profile?: Profile;
+  membership?: Membership;
+}
+
+export interface Payment {
+  id: string;
+  client_id: string;
+  cashier_id: string | null;
+  amount: number;
+  payment_method: "cash" | "card" | "transfer" | "other";
+  payment_type: "membership" | "product" | "other";
+  reference_id: string | null;
+  status: "completed" | "refunded" | "failed";
+  notes: string | null;
+  payment_date: string;
+  created_at: string;
+  updated_at?: string;
+  profiles?: {
+    first_name: string | null;
+    last_name: string | null;
+    email?: string | null;
+    phone_number?: string | null;
+  };
 }
 
 // ---- Supabase Database Type Map ----

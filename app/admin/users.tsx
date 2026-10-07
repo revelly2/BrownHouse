@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { ToastManager } from "../../components/ui/Toast";
 import { supabase } from "../../lib/supabase";
+import { router } from "expo-router";
 import { Card } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
 import { Input } from "../../components/ui/Input";
@@ -236,7 +237,7 @@ export default function UsersScreen() {
             </Text>
 
             <View style={styles.modalOptions}>
-              {["admin", "trainer", "cashier", "client"].map((roleOption) => (
+              {["admin", "trainer", "client"].map((roleOption) => (
                 <TouchableOpacity
                   key={roleOption}
                   style={[
@@ -256,6 +257,20 @@ export default function UsersScreen() {
                   </Text>
                 </TouchableOpacity>
               ))}
+
+              {selectedUser?.role === "client" && (
+                <TouchableOpacity
+                  style={[styles.modalOptionBtn, { borderColor: Colors.primary, marginTop: Spacing.sm }]}
+                  onPress={() => {
+                    setSelectedUser(null);
+                    router.push("/admin/memberships");
+                  }}
+                >
+                  <Text style={[styles.modalOptionText, { color: Colors.primary }]}>
+                    💳 Manage Memberships & Billing
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             <TouchableOpacity

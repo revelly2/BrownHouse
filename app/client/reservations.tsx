@@ -1,8 +1,8 @@
 // ============================================================================
-// Reservations Screen — Swiss Glassmorphic Bookings
+// Reservations Screen — Swiss Glassmorphic Bookings with Cashier Check-in
 // ============================================================================
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   FlatList,
   RefreshControl,
   TouchableOpacity,
+  Platform,
 } from "react-native";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
@@ -18,6 +19,11 @@ import { Reservation } from "../../lib/types";
 import { formatTime } from "../../lib/utils";
 import { Colors, Spacing, Typography, Radius } from "../../constants/colors";
 import { GlassAlert, GlassAlertAction } from "../../components/ui/GlassAlert";
+import {
+  getReservationState,
+  serializeReservationMetadata,
+  sendReservationNotification,
+} from "../../lib/reservation-utils";
 
 interface ReservationWithEquipment extends Reservation {
   equipment?: { name: string; type: string };
@@ -29,6 +35,9 @@ export default function ReservationsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Set of reservation IDs already locally alerted to avoid re-triggering during the same session
+  const processedNotifs = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -63,15 +72,20 @@ export default function ReservationsScreen() {
 
   useEffect(() => {
     fetchReservations();
-    
+
     if (!profile) return;
-    
+
     // Subscribe to realtime reservations changes for this user
     const channel = supabase
       .channel("client-reservations")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "reservations", filter: `client_id=eq.${profile.id}` },
+        {
+          event: "*",
+          schema: "public",
+          table: "reservations",
+          filter: `client_id=eq.${profile.id}`,
+        },
         () => fetchReservations()
       )
       .subscribe();
@@ -81,31 +95,73 @@ export default function ReservationsScreen() {
     };
   }, [profile]);
 
+  // Handle active session lifecycle: 5-min start reminder, 5-min return reminder, and session completion
   useEffect(() => {
-    // Auto-cancel no-shows and auto-complete finished sessions
-    reservations.forEach(async (res) => {
-      if (res.status === "confirmed") {
-        const start = new Date(`${res.reservation_date}T${res.start_time}`);
-        const end = new Date(`${res.reservation_date}T${res.end_time}`);
-        const isArrived = res.notes?.includes('"is_arrived":true');
+    if (!profile) return;
 
-        if (!isArrived) {
-          const threeMinsAfterStart = new Date(start.getTime() + 3 * 60 * 1000);
-          if (currentTime > threeMinsAfterStart) {
-            await supabase
-              .from("reservations")
-              .update({ status: "cancelled", notes: '{"auto_cancelled":true}' })
-              .eq("id", res.id);
-          }
-        } else if (isArrived && currentTime >= end) {
+    reservations.forEach(async (res) => {
+      if (res.status !== "confirmed") return;
+
+      const timing = getReservationState(res, currentTime);
+      const equipmentName = res.equipment?.name || "Equipment";
+
+      // 1. 5 minutes before start reminder
+      const startKey = `${res.id}-start-5m`;
+      if (timing.is5MinBeforeStart && !timing.metadata.notified_5min_start && !processedNotifs.current.has(startKey)) {
+        processedNotifs.current.add(startKey);
+        await sendReservationNotification(
+          profile.id,
+          "5 Minutes Away!",
+          `Your reservation for ${equipmentName} starts in 5 minutes! Please head to the cashier counter to check in.`
+        );
+        const updatedNotes = serializeReservationMetadata(
+          { notified_5min_start: true },
+          res.notes
+        );
+        await supabase
+          .from("reservations")
+          .update({ notes: updatedNotes })
+          .eq("id", res.id);
+      }
+
+      // 2. 5 minutes before end reminder (clean up, return, and fix equipment)
+      const endKey = `${res.id}-end-5m`;
+      if (timing.is5MinBeforeEnd && !timing.metadata.notified_5min_end && !processedNotifs.current.has(endKey)) {
+        processedNotifs.current.add(endKey);
+        await sendReservationNotification(
+          profile.id,
+          "5 Mins Left — Return Equipment",
+          `5 minutes remaining on ${equipmentName}! Please prepare to wipe down, return, and rack the equipment in place.`
+        );
+        const updatedNotes = serializeReservationMetadata(
+          { notified_5min_end: true },
+          res.notes
+        );
+        await supabase
+          .from("reservations")
+          .update({ notes: updatedNotes })
+          .eq("id", res.id);
+      }
+
+      // 3. Auto-complete session when end time arrives for checked-in user
+      if (timing.isCheckedIn && timing.isEnded) {
+        const completeKey = `${res.id}-completed`;
+        if (!processedNotifs.current.has(completeKey)) {
+          processedNotifs.current.add(completeKey);
           await supabase
             .from("reservations")
             .update({ status: "completed" })
             .eq("id", res.id);
+
+          await sendReservationNotification(
+            profile.id,
+            "Session Completed",
+            `Your reservation for ${equipmentName} is complete. Thank you for racking and returning the equipment!`
+          );
         }
       }
     });
-  }, [currentTime, reservations]);
+  }, [currentTime, reservations, profile]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -117,18 +173,23 @@ export default function ReservationsScreen() {
     const doCancel = async () => {
       const { error } = await supabase
         .from("reservations")
-        .update({ status: "cancelled" })
+        .update({
+          status: "cancelled",
+          notes: serializeReservationMetadata(
+            { cancel_reason: "Cancelled by user" },
+            reservation.notes
+          ),
+        })
         .eq("id", reservation.id);
 
       if (error) {
         showAlert("Error", error.message);
       }
-      // Success will be handled by realtime subscription
     };
 
     showAlert(
       "Cancel Reservation",
-      "Are you sure you want to cancel this reservation?",
+      "Are you sure you want to cancel this equipment reservation?",
       [
         { text: "No", style: "cancel" },
         { text: "Yes, Cancel", style: "destructive", onPress: doCancel },
@@ -136,131 +197,224 @@ export default function ReservationsScreen() {
     );
   };
 
-  const handleConfirmArrival = async (reservation: ReservationWithEquipment) => {
-    const { error } = await supabase
-      .from("reservations")
-      .update({ notes: '{"is_arrived":true}' })
-      .eq("id", reservation.id);
-
-    if (error) {
-      showAlert("Error", error.message);
-    }
-  };
-
-  const getStatusAccent = (status: string): string => {
-    switch (status) {
-      case "confirmed":
-        return Colors.primary;
-      case "completed":
-        return Colors.success;
-      case "cancelled":
-        return Colors.error;
-      default:
-        return Colors.light.textTertiary;
-    }
-  };
-
   const renderItem = ({ item }: { item: ReservationWithEquipment }) => {
-    const start = new Date(`${item.reservation_date}T${item.start_time}`);
-    const end = new Date(`${item.reservation_date}T${item.end_time}`);
-    const isArrived = item.notes?.includes('"is_arrived":true');
-    const autoCancelled = item.notes?.includes('"auto_cancelled":true');
+    const timing = getReservationState(item, currentTime);
+    const equipmentName = item.equipment?.name ?? "Equipment";
+    const equipmentType = item.equipment?.type === "cardio" ? "Cardio" : "Strength";
 
-    const threeMinsAfterStart = new Date(start.getTime() + 3 * 60 * 1000);
-    const isStarted = currentTime >= start && currentTime < end;
-    
-    const timeRemaining = Math.max(0, Math.floor((threeMinsAfterStart.getTime() - currentTime.getTime()) / 1000));
-    const mins = Math.floor(timeRemaining / 60);
-    const secs = timeRemaining % 60;
-    const timerText = `${mins}:${secs.toString().padStart(2, "0")}`;
-
-    const showConfirmArrival = isStarted && !isArrived && item.status === "confirmed" && timeRemaining > 0;
-    const showInProgress = isStarted && isArrived && item.status === "confirmed";
-    const canCancel = currentTime < start && item.status === "confirmed";
+    // User can cancel if the start time is still in the future and reservation is confirmed
+    const canCancel = item.status === "confirmed" && !timing.isStarted && !timing.isEnded;
 
     return (
-      <Card variant="glass" style={styles.card}>
-      <View style={styles.cardHeader}>
-        <View style={styles.cardInfo}>
-          <Text style={styles.equipmentName}>
-            {item.equipment?.name ?? "Unknown Equipment"}
-          </Text>
-          <Text style={styles.equipmentType}>
-            {item.equipment?.type === "cardio" ? "Cardio" : "Strength"}
-          </Text>
-        </View>
-        <View style={styles.statusContainer}>
-          <View
-            style={[
-              styles.statusDot,
-              { backgroundColor: getStatusAccent(item.status) },
-            ]}
-          />
-          <Text
-            style={[
-              styles.statusText,
-              { color: getStatusAccent(item.status) },
-            ]}
-          >
-            {item.status}
-          </Text>
-        </View>
-      </View>
+      <Card
+        variant="glass"
+        style={[
+          styles.card,
+          timing.isActive ? styles.activeCard : undefined,
+        ] as any}
+      >
+        {/* Header */}
+        <View style={styles.cardHeader}>
+          <View style={styles.cardInfo}>
+            <Text style={styles.equipmentName}>{equipmentName}</Text>
+            <Text style={styles.equipmentType}>{equipmentType}</Text>
+          </View>
 
-      <View style={styles.detailRow}>
-        <View style={styles.detailItem}>
-          <Text style={styles.detailLabel}>Date</Text>
-          <Text style={styles.detailValue}>{item.reservation_date}</Text>
+          {/* Status Badge */}
+          {timing.isActive ? (
+            <View style={styles.activePill}>
+              <View style={styles.activeDot} />
+              <Text style={styles.activePillText}>ACTIVE NOW</Text>
+            </View>
+          ) : (
+            <View style={styles.statusContainer}>
+              <View
+                style={[
+                  styles.statusDot,
+                  {
+                    backgroundColor:
+                      item.status === "completed"
+                        ? Colors.success
+                        : item.status === "cancelled"
+                        ? Colors.error
+                        : timing.isCheckedIn
+                        ? Colors.success
+                        : timing.isMissedCheckIn
+                        ? Colors.error
+                        : Colors.secondary,
+                  },
+                ]}
+              />
+              <Text
+                style={[
+                  styles.statusText,
+                  {
+                    color:
+                      item.status === "completed"
+                        ? Colors.success
+                        : item.status === "cancelled"
+                        ? Colors.error
+                        : timing.isCheckedIn
+                        ? Colors.success
+                        : timing.isMissedCheckIn
+                        ? Colors.error
+                        : Colors.secondary,
+                  },
+                ]}
+              >
+                {item.status === "completed"
+                  ? "Completed"
+                  : item.status === "cancelled"
+                  ? "Cancelled"
+                  : timing.isCheckedIn
+                  ? "Checked In"
+                  : timing.isMissedCheckIn
+                  ? "Check-in Overdue"
+                  : "Awaiting Check-in"}
+              </Text>
+            </View>
+          )}
         </View>
-        <View style={styles.detailDivider} />
-        <View style={styles.detailItem}>
-          <Text style={styles.detailLabel}>Time</Text>
-          <Text style={styles.detailValue}>
-            {formatTime(item.start_time)} — {formatTime(item.end_time)}
-          </Text>
-        </View>
-      </View>
 
-      {canCancel && (
-        <View style={styles.cardActions}>
-          <TouchableOpacity
-            style={styles.cancelBtn}
-            onPress={() => handleCancel(item)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.cancelBtnText}>Cancel Reservation</Text>
-          </TouchableOpacity>
+        {/* Date and Time Details */}
+        <View style={styles.detailRow}>
+          <View style={styles.detailItem}>
+            <Text style={styles.detailLabel}>Date</Text>
+            <Text style={styles.detailValue}>{item.reservation_date}</Text>
+          </View>
+          <View style={styles.detailDivider} />
+          <View style={styles.detailItem}>
+            <Text style={styles.detailLabel}>Slot</Text>
+            <Text style={styles.detailValue}>
+              {formatTime(item.start_time)} — {formatTime(item.end_time)}
+            </Text>
+          </View>
         </View>
-      )}
 
-      {showConfirmArrival && (
-        <View style={styles.confirmArrivalContainer}>
-          <Text style={styles.timerText}>Time remaining to confirm: {timerText}</Text>
-          <TouchableOpacity
-            style={styles.confirmArrivalBtn}
-            onPress={() => handleConfirmArrival(item)}
-          >
-            <Text style={styles.confirmArrivalText}>I'm Here (Confirm Arrival)</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+        {/* ================= ACTIVE STATE (CHECKED-IN & IN-SESSION) ================= */}
+        {timing.isActive && (
+          <View style={styles.activeSection}>
+            <View style={styles.countdownRow}>
+              <View>
+                <Text style={styles.countdownLabel}>Time Remaining</Text>
+                <Text style={styles.countdownValue}>{timing.remainingText}</Text>
+              </View>
+              <View style={styles.countdownBadge}>
+                <Text style={styles.countdownBadgeText}>
+                  Ends at {formatTime(item.end_time)}
+                </Text>
+              </View>
+            </View>
 
-      {showInProgress && (
-        <View style={styles.inProgressContainer}>
-          <Text style={styles.inProgressText}>Workout In Progress</Text>
-        </View>
-      )}
+            {/* Progress bar */}
+            <View style={styles.progressTrack}>
+              <View
+                style={[
+                  styles.progressBar,
+                  {
+                    width: `${timing.progressPercent}%`,
+                    backgroundColor: timing.is5MinBeforeEnd ? Colors.error : Colors.primary,
+                  },
+                ]}
+              />
+            </View>
 
-      {autoCancelled && (
-        <View style={styles.autoCancelContainer}>
-          <Text style={styles.autoCancelText}>Auto-cancelled: No-show</Text>
-        </View>
-      )}
-    </Card>
-  );
+            {/* 5-minute wrap-up notice */}
+            {timing.is5MinBeforeEnd ? (
+              <View style={styles.wrapUpBanner}>
+                <Text style={styles.wrapUpTitle}>⚠️ 5 Minutes Remaining</Text>
+                <Text style={styles.wrapUpText}>
+                  Please prepare to clean up, wipe down, and fix/rack the equipment in proper order for the next user.
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.inUseBanner}>
+                <Text style={styles.inUseText}>
+                  Equipment is currently active and assigned to you. Enjoy your workout!
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* ================= AWAITING CHECK-IN OR NOT CHECKED IN ================= */}
+        {item.status === "confirmed" && !timing.isCheckedIn && (
+          <View style={styles.checkinNoticeContainer}>
+            {timing.isMissedCheckIn ? (
+              <View style={styles.overdueBanner}>
+                <Text style={styles.overdueTitle}>⚠️ Reservation Time Started</Text>
+                <Text style={styles.overdueText}>
+                  You have not been checked in by the cashier. Please present yourself at the cashier counter immediately to proceed, or your slot may be cancelled.
+                </Text>
+              </View>
+            ) : timing.is5MinBeforeStart ? (
+              <View style={styles.soonBanner}>
+                <Text style={styles.soonTitle}>🔔 Starts in 5 Minutes</Text>
+                <Text style={styles.soonText}>
+                  Head over to the cashier counter to check in so your equipment session activates on time!
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.pendingBanner}>
+                <Text style={styles.pendingTitle}>Cashier Check-in Required</Text>
+                <Text style={styles.pendingText}>
+                  Please present this booking to the cashier counter upon your arrival at the gym. The cashier will check you in to activate your reservation.
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Checked in early, awaiting start time */}
+        {item.status === "confirmed" && timing.isCheckedIn && !timing.isStarted && !timing.isEnded && (
+          <View style={styles.earlyCheckinContainer}>
+            <Text style={styles.earlyCheckinTitle}>✓ Checked in by Cashier</Text>
+            <Text style={styles.earlyCheckinText}>
+              Your reservation is ready. It will automatically become ACTIVE at {formatTime(item.start_time)}.
+            </Text>
+          </View>
+        )}
+
+        {/* Cancellation details */}
+        {item.status === "cancelled" && (
+          <View style={styles.cancelledBanner}>
+            <Text style={styles.cancelledText}>
+              {timing.metadata.cancel_reason
+                ? `Cancelled: ${timing.metadata.cancel_reason}`
+                : timing.metadata.auto_cancelled
+                ? "Cancelled: Absent / No-show at cashier counter"
+                : "Reservation Cancelled"}
+            </Text>
+          </View>
+        )}
+
+        {/* Completed notice */}
+        {item.status === "completed" && (
+          <View style={styles.completedBanner}>
+            <Text style={styles.completedText}>✓ Session completed successfully</Text>
+          </View>
+        )}
+
+        {/* Cancel Action Button (only if before start time) */}
+        {canCancel && (
+          <View style={styles.cardActions}>
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => handleCancel(item)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.cancelBtnText}>Cancel Booking</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </Card>
+    );
   };
 
-  const activeCount = reservations.filter((r) => r.status === "confirmed").length;
+  const activeCount = reservations.filter((r) => {
+    const timing = getReservationState(r, currentTime);
+    return timing.isActive;
+  }).length;
 
   return (
     <View style={styles.container}>
@@ -268,7 +422,8 @@ export default function ReservationsScreen() {
         <Text style={styles.headerLabel}>Schedule</Text>
         <Text style={styles.title}>My Bookings</Text>
         <Text style={styles.subtitle}>
-          {activeCount} active · {reservations.length} total
+          {activeCount > 0 ? `${activeCount} session active now · ` : ""}
+          {reservations.length} total bookings
         </Text>
       </View>
 
@@ -291,7 +446,7 @@ export default function ReservationsScreen() {
             </View>
             <Text style={styles.emptyText}>No reservations yet</Text>
             <Text style={styles.emptyHint}>
-              Browse equipment to make your first booking.
+              Browse equipment to reserve your first workout slot.
             </Text>
           </View>
         }
@@ -311,15 +466,15 @@ export default function ReservationsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'transparent',
+    backgroundColor: "transparent",
   },
   header: {
     paddingHorizontal: Spacing.xl,
     paddingTop: Spacing["4xl"] + 8,
     paddingBottom: Spacing.md,
     maxWidth: 1024,
-    alignSelf: 'center',
-    width: '100%',
+    alignSelf: "center",
+    width: "100%",
   },
   headerLabel: {
     fontSize: 11,
@@ -345,11 +500,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xl,
     paddingBottom: 120,
     maxWidth: 1024,
-    alignSelf: 'center',
-    width: '100%',
+    alignSelf: "center",
+    width: "100%",
   },
   card: {
     marginBottom: Spacing.md,
+  },
+  activeCard: {
+    borderColor: "rgba(251, 191, 36, 0.45)",
+    borderWidth: 1.5,
+    backgroundColor: "rgba(251, 191, 36, 0.05)",
   },
   cardHeader: {
     flexDirection: "row",
@@ -363,7 +523,7 @@ const styles = StyleSheet.create({
   },
   equipmentName: {
     fontSize: Typography.fontSize.base,
-    fontWeight: "500",
+    fontWeight: "600",
     color: Colors.light.text,
     letterSpacing: 0.2,
   },
@@ -392,7 +552,29 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 11,
     fontWeight: "600",
-    textTransform: "capitalize",
+  },
+  activePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: Radius.full,
+    backgroundColor: "rgba(251, 191, 36, 0.2)",
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  activeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.primary,
+  },
+  activePillText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: Colors.primary,
+    letterSpacing: 0.5,
   },
   detailRow: {
     flexDirection: "row",
@@ -427,11 +609,194 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
     fontWeight: "500",
   },
+
+  /* Active session styling */
+  activeSection: {
+    marginTop: Spacing.xs,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    backgroundColor: "rgba(0, 0, 0, 0.25)",
+    borderWidth: 1,
+    borderColor: "rgba(251, 191, 36, 0.15)",
+  },
+  countdownRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+    marginBottom: Spacing.sm,
+  },
+  countdownLabel: {
+    fontSize: 11,
+    color: Colors.primary,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  countdownValue: {
+    fontSize: 32,
+    fontWeight: "800",
+    color: "#FFF",
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    marginTop: 2,
+  },
+  countdownBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: Radius.sm,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+  },
+  countdownBadgeText: {
+    fontSize: 11,
+    color: Colors.light.textSecondary,
+  },
+  progressTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    overflow: "hidden",
+    marginBottom: Spacing.md,
+  },
+  progressBar: {
+    height: "100%",
+    borderRadius: 3,
+  },
+  inUseBanner: {
+    padding: Spacing.sm,
+    borderRadius: Radius.sm,
+    backgroundColor: "rgba(34, 197, 94, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(34, 197, 94, 0.2)",
+  },
+  inUseText: {
+    fontSize: 12,
+    color: "#86EFAC",
+    fontWeight: "500",
+    textAlign: "center",
+  },
+  wrapUpBanner: {
+    padding: Spacing.sm + 2,
+    borderRadius: Radius.sm,
+    backgroundColor: "rgba(239, 68, 68, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.4)",
+  },
+  wrapUpTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#FCA5A5",
+    marginBottom: 2,
+  },
+  wrapUpText: {
+    fontSize: 12,
+    color: "#FECACA",
+    lineHeight: 16,
+  },
+
+  /* Check-in notice banners */
+  checkinNoticeContainer: {
+    marginTop: Spacing.xs,
+  },
+  pendingBanner: {
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    backgroundColor: "rgba(251, 191, 36, 0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(251, 191, 36, 0.18)",
+  },
+  pendingTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.primary,
+    marginBottom: 4,
+  },
+  pendingText: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    lineHeight: 16,
+  },
+  soonBanner: {
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    backgroundColor: "rgba(245, 158, 11, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(245, 158, 11, 0.35)",
+  },
+  soonTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#FCD34D",
+    marginBottom: 4,
+  },
+  soonText: {
+    fontSize: 12,
+    color: "#FEF3C7",
+    lineHeight: 16,
+  },
+  overdueBanner: {
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    backgroundColor: "rgba(239, 68, 68, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.35)",
+  },
+  overdueTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#FCA5A5",
+    marginBottom: 4,
+  },
+  overdueText: {
+    fontSize: 12,
+    color: "#FECACA",
+    lineHeight: 16,
+  },
+  earlyCheckinContainer: {
+    marginTop: Spacing.xs,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    backgroundColor: "rgba(34, 197, 94, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(34, 197, 94, 0.25)",
+  },
+  earlyCheckinTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#86EFAC",
+    marginBottom: 2,
+  },
+  earlyCheckinText: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    lineHeight: 16,
+  },
+  cancelledBanner: {
+    marginTop: Spacing.xs,
+    padding: Spacing.sm,
+    borderRadius: Radius.sm,
+    backgroundColor: "rgba(239, 68, 68, 0.08)",
+  },
+  cancelledText: {
+    fontSize: 12,
+    color: Colors.error,
+    fontWeight: "500",
+  },
+  completedBanner: {
+    marginTop: Spacing.xs,
+    padding: Spacing.sm,
+    borderRadius: Radius.sm,
+    backgroundColor: "rgba(34, 197, 94, 0.06)",
+  },
+  completedText: {
+    fontSize: 12,
+    color: Colors.success,
+    fontWeight: "500",
+  },
   cardActions: {
     borderTopWidth: 1,
     borderTopColor: "rgba(255, 255, 255, 0.04)",
     paddingTop: Spacing.md,
     alignItems: "flex-end",
+    marginTop: Spacing.sm,
   },
   cancelBtn: {
     paddingHorizontal: Spacing.md,
@@ -475,51 +840,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.light.textTertiary,
     marginTop: Spacing.xs,
-    fontWeight: "500",
-  },
-  confirmArrivalContainer: {
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.04)",
-    paddingTop: Spacing.md,
-    alignItems: "center",
-  },
-  timerText: {
-    color: Colors.error,
-    fontSize: 12,
-    fontWeight: "700",
-    marginBottom: Spacing.sm,
-  },
-  confirmArrivalBtn: {
-    backgroundColor: Colors.primary,
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.md,
-    borderRadius: Radius.md,
-    width: '100%',
-    alignItems: "center",
-  },
-  confirmArrivalText: {
-    color: "#000",
-    fontWeight: "700",
-  },
-  inProgressContainer: {
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.04)",
-    paddingTop: Spacing.md,
-    alignItems: "center",
-  },
-  inProgressText: {
-    color: Colors.success,
-    fontWeight: "600",
-  },
-  autoCancelContainer: {
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.04)",
-    paddingTop: Spacing.sm,
-    alignItems: "center",
-  },
-  autoCancelText: {
-    color: Colors.error,
-    fontSize: 12,
     fontWeight: "500",
   },
 });

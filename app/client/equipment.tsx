@@ -24,6 +24,7 @@ import { Colors, Spacing, Typography, Radius } from "../../constants/colors";
 import { GlassAlert, GlassAlertAction } from "../../components/ui/GlassAlert";
 import { scheduleReservationNotifications } from "../../lib/notifications";
 import { getLocalDateString } from "../../lib/utils";
+import { serializeReservationMetadata } from "../../lib/reservation-utils";
 
 type FilterType = "all" | "cardio" | "strength";
 
@@ -45,8 +46,9 @@ export default function EquipmentScreen() {
 
   const [slotModalVisible, setSlotModalVisible] = useState(false);
   const [selectedEquipment, setSelectedEquipment] = useState<Equipment | null>(null);
-  const [availableSlots, setAvailableSlots] = useState<{start: string, end: string, available: boolean}[]>([]);
-  const [selectedSlot, setSelectedSlot] = useState<{start: string, end: string} | null>(null);
+  const [availableSlots, setAvailableSlots] = useState<{start: string, end: string, available: boolean, isTestSlot?: boolean}[]>([]);
+  const [selectedSlot, setSelectedSlot] = useState<{start: string, end: string, isTestSlot?: boolean} | null>(null);
+  const [selectedDateMode, setSelectedDateMode] = useState<"today" | "tomorrow">("today");
   const [bookingLoading, setBookingLoading] = useState(false);
 
   const showAlert = (title: string, message: string, actions?: GlassAlertAction[]) => {
@@ -69,8 +71,7 @@ export default function EquipmentScreen() {
 
   useEffect(() => {
     fetchEquipment();
-    
-    // Subscribe to realtime equipment changes
+
     const channel = supabase
       .channel("client-equipment")
       .on(
@@ -88,12 +89,10 @@ export default function EquipmentScreen() {
   useEffect(() => {
     let result = equipment;
 
-    // Apply type filter
     if (filter !== "all") {
       result = result.filter((item) => item.type === filter);
     }
 
-    // Apply search filter
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(
@@ -113,6 +112,70 @@ export default function EquipmentScreen() {
     setRefreshing(false);
   };
 
+  const loadSlotsForDate = async (item: Equipment, mode: "today" | "tomorrow") => {
+    const targetDate = new Date();
+    if (mode === "tomorrow") {
+      targetDate.setDate(targetDate.getDate() + 1);
+    }
+    const targetDateStr = getLocalDateString(targetDate);
+    const isToday = mode === "today";
+
+    const slots: { start: string; end: string; available: boolean; isTestSlot?: boolean }[] = [];
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMin = now.getMinutes();
+
+    // 1. If today, add an Immediate Test Slot right at the top so users can test live workflows anytime (even late at night!)
+    if (isToday) {
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const startH = currentHour;
+      const startM = currentMin;
+      const endTotalM = currentMin + 15;
+      const endH = (currentHour + Math.floor(endTotalM / 60)) % 24;
+      const endM = endTotalM % 60;
+
+      slots.push({
+        start: `${pad(startH)}:${pad(startM)}`,
+        end: `${pad(endH)}:${pad(endM)}`,
+        available: true,
+        isTestSlot: true,
+      });
+    }
+
+    // 2. Full 1-hour slots from 06:30 to 23:30 (covers morning to late night!)
+    for (let i = 6; i <= 23; i++) {
+      const h = String(i).padStart(2, "0");
+      const nextH = String((i + 1) % 24).padStart(2, "0");
+      slots.push({ start: `${h}:30`, end: `${nextH}:30`, available: true });
+    }
+
+    const { data: res } = await supabase
+      .from("reservations")
+      .select("start_time, status")
+      .eq("equipment_id", item.id)
+      .eq("reservation_date", targetDateStr)
+      .in("status", ["confirmed", "completed"]);
+
+    if (res) {
+      const bookedStartTimes = res.map((r) => r.start_time.substring(0, 5));
+      for (const slot of slots) {
+        if (!slot.isTestSlot && bookedStartTimes.includes(slot.start)) {
+          slot.available = false;
+        }
+
+        // Only disable past slots if booking for today
+        if (isToday && !slot.isTestSlot) {
+          const [sh, sm] = slot.start.split(":").map(Number);
+          if (sh < currentHour || (sh === currentHour && sm <= currentMin)) {
+            slot.available = false;
+          }
+        }
+      }
+    }
+
+    setAvailableSlots(slots);
+  };
+
   const handleReserve = async (item: Equipment) => {
     if (!profile?.id) {
       showAlert("Notice", "You must be logged in to reserve equipment.");
@@ -121,60 +184,45 @@ export default function EquipmentScreen() {
 
     setSelectedEquipment(item);
     setSelectedSlot(null);
-    
-    // Generate 1-hour slots from 06:30 to 19:30
-    const slots = [];
-    for (let i = 6; i <= 19; i++) {
-      const h = String(i).padStart(2, '0');
-      const nextH = String(i + 1).padStart(2, '0');
-      slots.push({ start: `${h}:30`, end: `${nextH}:30`, available: true });
-    }
-    
+    setSelectedDateMode("today");
     setSlotModalVisible(true);
+    await loadSlotsForDate(item, "today");
+  };
 
-    const today = getLocalDateString();
-    const { data: res } = await supabase
-      .from("reservations")
-      .select("start_time, status")
-      .eq("equipment_id", item.id)
-      .eq("reservation_date", today)
-      .in("status", ["confirmed", "completed"]); 
-
-    const now = new Date();
-    const currentHour = now.getHours();
-    const currentMin = now.getMinutes();
-
-    if (res) {
-      const bookedStartTimes = res.map(r => r.start_time.substring(0, 5));
-      for (const slot of slots) {
-        if (bookedStartTimes.includes(slot.start)) {
-          slot.available = false;
-        }
-        
-        // Also disable past slots
-        const [sh, sm] = slot.start.split(':').map(Number);
-        if (sh < currentHour || (sh === currentHour && sm <= currentMin)) {
-          slot.available = false;
-        }
-      }
+  const handleDateModeChange = async (mode: "today" | "tomorrow") => {
+    setSelectedDateMode(mode);
+    setSelectedSlot(null);
+    if (selectedEquipment) {
+      await loadSlotsForDate(selectedEquipment, mode);
     }
-
-    setAvailableSlots(slots);
   };
 
   const confirmReservation = async () => {
     if (!profile?.id || !selectedEquipment || !selectedSlot) return;
 
     setBookingLoading(true);
-    const today = getLocalDateString();
+
+    const targetDate = new Date();
+    if (selectedDateMode === "tomorrow") {
+      targetDate.setDate(targetDate.getDate() + 1);
+    }
+    const bookingDateStr = getLocalDateString(targetDate);
+
+    const initialNotes = serializeReservationMetadata({
+      checked_in: false,
+      checked_in_at: null,
+      notified_5min_start: false,
+      notified_5min_end: false,
+    });
 
     const { error } = await supabase.from("reservations").insert({
       client_id: profile.id,
       equipment_id: selectedEquipment.id,
-      reservation_date: today,
+      reservation_date: bookingDateStr,
       start_time: selectedSlot.start,
       end_time: selectedSlot.end,
       status: "confirmed",
+      notes: initialNotes,
     });
 
     setBookingLoading(false);
@@ -195,8 +243,8 @@ export default function EquipmentScreen() {
       scheduleReservationNotifications(selectedEquipment.name, startDateTime, endDateTime);
 
       showAlert(
-        "Success",
-        "Equipment reserved! Please arrive on time.",
+        "Reservation Booked",
+        "Your equipment is booked! Please present your booking to the cashier upon arrival to check in and activate your session.",
         [
           { text: "View Bookings", onPress: () => router.push("/client/reservations") },
           { text: "OK", style: "cancel" },
@@ -303,7 +351,42 @@ export default function EquipmentScreen() {
             <Text style={styles.modalTitle}>
               Book {selectedEquipment?.name}
             </Text>
-            <Text style={styles.modalSubtitle}>Today's Available Slots</Text>
+
+            {/* Date Switcher */}
+            <View style={styles.dateSwitchContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.dateSwitchBtn,
+                  selectedDateMode === "today" && styles.dateSwitchBtnActive,
+                ]}
+                onPress={() => handleDateModeChange("today")}
+              >
+                <Text
+                  style={[
+                    styles.dateSwitchText,
+                    selectedDateMode === "today" && styles.dateSwitchTextActive,
+                  ]}
+                >
+                  Today
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.dateSwitchBtn,
+                  selectedDateMode === "tomorrow" && styles.dateSwitchBtnActive,
+                ]}
+                onPress={() => handleDateModeChange("tomorrow")}
+              >
+                <Text
+                  style={[
+                    styles.dateSwitchText,
+                    selectedDateMode === "tomorrow" && styles.dateSwitchTextActive,
+                  ]}
+                >
+                  Tomorrow
+                </Text>
+              </TouchableOpacity>
+            </View>
 
             <ScrollView style={styles.slotsContainer}>
               <View style={styles.slotsGrid}>
@@ -315,6 +398,46 @@ export default function EquipmentScreen() {
                     const h12 = h % 12 || 12;
                     return `${h12}:${String(m).padStart(2, '0')} ${suffix}`;
                   };
+
+                  if (slot.isTestSlot) {
+                    return (
+                      <TouchableOpacity
+                        key={index}
+                        style={[
+                          styles.testSlotCard,
+                          isSelected && styles.testSlotCardSelected,
+                        ]}
+                        onPress={() => setSelectedSlot(slot)}
+                      >
+                        <View style={styles.testSlotHeader}>
+                          <Text
+                            style={[
+                              styles.testSlotTag,
+                              isSelected && { color: "#000" },
+                            ]}
+                          >
+                            ⚡ QUICK TEST (STARTS RIGHT NOW)
+                          </Text>
+                        </View>
+                        <Text
+                          style={[
+                            styles.testSlotTime,
+                            isSelected && { color: "#000" },
+                          ]}
+                        >
+                          {formatTime12Hour(slot.start)} — {formatTime12Hour(slot.end)} (15 mins)
+                        </Text>
+                        <Text
+                          style={[
+                            styles.testSlotHint,
+                            isSelected && { color: "rgba(0, 0, 0, 0.75)" },
+                          ]}
+                        >
+                          Test live active flow: Cashier checks in → Becomes ACTIVE immediately!
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  }
 
                   return (
                     <TouchableOpacity
@@ -356,7 +479,7 @@ export default function EquipmentScreen() {
                 disabled={!selectedSlot}
                 loading={bookingLoading}
                 onPress={confirmReservation}
-                containerStyle={{ flex: 1 }}
+                style={{ flex: 1 }}
               />
             </View>
           </View>
@@ -528,5 +651,64 @@ const styles = StyleSheet.create({
   modalCancelText: {
     color: Colors.dark.textSecondary,
     fontWeight: "600",
+  },
+  dateSwitchContainer: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: Spacing.md,
+  },
+  dateSwitchBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: Radius.md,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    alignItems: "center",
+  },
+  dateSwitchBtnActive: {
+    backgroundColor: "rgba(251, 191, 36, 0.15)",
+    borderColor: Colors.primary,
+  },
+  dateSwitchText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.dark.textTertiary,
+  },
+  dateSwitchTextActive: {
+    color: Colors.primary,
+  },
+  testSlotCard: {
+    width: "100%",
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    backgroundColor: "rgba(251, 191, 36, 0.12)",
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+    marginBottom: Spacing.xs,
+  },
+  testSlotCardSelected: {
+    backgroundColor: Colors.primary,
+  },
+  testSlotHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  testSlotTag: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: Colors.primary,
+    letterSpacing: 0.5,
+  },
+  testSlotTime: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#FFF",
+    marginBottom: 2,
+  },
+  testSlotHint: {
+    fontSize: 11,
+    color: Colors.dark.textSecondary,
   },
 });

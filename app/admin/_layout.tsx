@@ -15,6 +15,7 @@ import { useAuth } from "../../lib/auth";
 const TAB_ICONS: Record<string, { icon: IconName; label: string }> = {
   dashboard: { icon: "ranking", label: "Overview" },
   users: { icon: "chat-square-2", label: "Users" },
+  memberships: { icon: "course-up", label: "Memberships" },
   "equipment-manage": { icon: "dumbbells", label: "Equipment" },
   "reservations-manage": { icon: "clipboard-check", label: "Bookings" },
   settings: { icon: "settings-3", label: "Settings" },
@@ -48,10 +49,10 @@ export default function AdminLayout() {
   return (
     <Tabs
       sceneContainerStyle={{ 
-        flex: 1,
-        backgroundColor: "transparent",
-        marginLeft: isDesktop ? 250 : 0 
-      }}
+      flex: 1,
+      backgroundColor: "transparent",
+      marginLeft: isDesktop ? 250 : 0 
+    }}
       tabBar={isDesktop ? (props) => <DesktopSidebar {...props} /> : undefined}
       screenOptions={{
         headerShown: false,
@@ -81,6 +82,15 @@ export default function AdminLayout() {
           title: "Users",
           tabBarIcon: ({ focused }) => (
             <TabIcon name="users" focused={focused} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="memberships"
+        options={{
+          title: "Memberships",
+          tabBarIcon: ({ focused }) => (
+            <TabIcon name="memberships" focused={focused} />
           ),
         }}
       />

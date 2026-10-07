@@ -219,6 +219,9 @@ export default function AdminDashboard() {
     { start: "17:30", end: "18:30" },
     { start: "18:30", end: "19:30" },
     { start: "19:30", end: "20:30" },
+    { start: "20:30", end: "21:30" },
+    { start: "21:30", end: "22:30" },
+    { start: "22:30", end: "23:30" },
   ];
 
   const openReservationModal = async () => {
@@ -907,7 +910,7 @@ export default function AdminDashboard() {
 
                   <Text style={styles.inputLabel}>System Role</Text>
                   <View style={styles.rolePickerRow}>
-                    {["client", "trainer", "cashier", "admin"].map((r) => (
+                    {["client", "trainer", "admin"].map((r) => (
                       <TouchableOpacity
                         key={r}
                         style={[styles.roleChip, memberRole === r && styles.roleChipActive]}

@@ -29,50 +29,97 @@ import { Colors, Spacing, Typography, Radius } from "../../constants/colors";
 import { formatTime, getLocalDateString } from "../../lib/utils";
 import { Reservation, Notification as AppNotification } from "../../lib/types";
 import { router } from "expo-router";
+import { getReservationState } from "../../lib/reservation-utils";
 
 const ActiveReservationCard = ({ reservation }: { reservation: Reservation }) => {
-  const [timeLeft, setTimeLeft] = useState("");
+  const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
-    const updateCountdown = () => {
-      const now = new Date();
-      const [hours, minutes, seconds] = reservation.end_time.split(":");
-      const endDate = new Date();
-      endDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), parseInt(seconds || "0", 10));
-
-      const diffMs = endDate.getTime() - now.getTime();
-      
-      if (diffMs <= 0) {
-        setTimeLeft("00:00");
-        return;
-      }
-
-      const m = Math.floor(diffMs / 60000);
-      const s = Math.floor((diffMs % 60000) / 1000);
-      setTimeLeft(`${m}:${s < 10 ? '0' : ''}${s}`);
-    };
-
-    updateCountdown();
-    const interval = setInterval(updateCountdown, 1000);
+    const interval = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(interval);
-  }, [reservation]);
+  }, []);
+
+  const timing = getReservationState(reservation, currentTime);
 
   return (
-    <Card variant="glassElevated" style={{ borderColor: Colors.primary, borderWidth: 1, padding: Spacing.md, marginBottom: Spacing.md }}>
+    <Card
+      variant="glassElevated"
+      style={{
+        borderColor: timing.is5MinBeforeEnd ? Colors.error : Colors.primary,
+        borderWidth: 1.5,
+        padding: Spacing.md,
+        marginBottom: Spacing.md,
+        backgroundColor: timing.is5MinBeforeEnd ? "rgba(239, 68, 68, 0.08)" : "rgba(251, 191, 36, 0.05)",
+      }}
+    >
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-        <View>
-          <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: 12, textTransform: "uppercase", letterSpacing: 1 }}>Active Now</Text>
-          <Text style={{ color: Colors.text, fontSize: 32, fontWeight: '700', marginTop: 4, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' }}>
-            {timeLeft}
+        <View style={{ flex: 1, marginRight: Spacing.sm }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <View
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: 4,
+                backgroundColor: timing.is5MinBeforeEnd ? Colors.error : Colors.primary,
+              }}
+            />
+            <Text
+              style={{
+                color: timing.is5MinBeforeEnd ? Colors.error : Colors.primary,
+                fontWeight: "700",
+                fontSize: 12,
+                textTransform: "uppercase",
+                letterSpacing: 1,
+              }}
+            >
+              {timing.is5MinBeforeEnd ? "5 MINS REMAINING — WRAP UP" : "ACTIVE SESSION"}
+            </Text>
+          </View>
+          <Text
+            style={{
+              color: Colors.light.text,
+              fontSize: 32,
+              fontWeight: "700",
+              marginTop: 4,
+              fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+            }}
+          >
+            {timing.remainingText}
           </Text>
-          <Text style={{ color: Colors.textSecondary, fontSize: 13, marginTop: 2 }}>
+          <Text style={{ color: Colors.light.textSecondary, fontSize: 13, marginTop: 2 }}>
             Time remaining until {formatTime(reservation.end_time)}
           </Text>
         </View>
-        <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(251,191,36,0.15)', alignItems: "center", justifyContent: "center" }}>
-          <Icon name="clock" size={24} color={Colors.primary} />
+        <View
+          style={{
+            width: 48,
+            height: 48,
+            borderRadius: 24,
+            backgroundColor: timing.is5MinBeforeEnd ? "rgba(239, 68, 68, 0.2)" : "rgba(251, 191, 36, 0.15)",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Icon name="running-2" size={24} color={timing.is5MinBeforeEnd ? Colors.error : Colors.primary} />
         </View>
       </View>
+
+      {timing.is5MinBeforeEnd && (
+        <View
+          style={{
+            marginTop: Spacing.sm,
+            padding: Spacing.sm,
+            borderRadius: Radius.sm,
+            backgroundColor: "rgba(239, 68, 68, 0.15)",
+            borderWidth: 1,
+            borderColor: "rgba(239, 68, 68, 0.3)",
+          }}
+        >
+          <Text style={{ color: "#FCA5A5", fontSize: 12, fontWeight: "600" }}>
+            ⚠️ 5 mins away: Please prepare to wipe down, return, and rack the equipment in place.
+          </Text>
+        </View>
+      )}
     </Card>
   );
 };
@@ -320,17 +367,14 @@ export default function ClientDashboard() {
 
   const now = new Date();
   const todayStr = getLocalDateString(now);
-  const currentHM = now.toTimeString().substring(0, 5); // "HH:MM"
+  const activeRes = upcomingReservations.find((res) => getReservationState(res, now).isActive);
+  const overdueRes = upcomingReservations.find((res) => getReservationState(res, now).isMissedCheckIn);
 
-  const activeRes = upcomingReservations.find(res => {
-    return res.reservation_date === todayStr &&
-           res.start_time.substring(0, 5) <= currentHM &&
-           res.end_time.substring(0, 5) >= currentHM;
-  });
-
-  const futureRes = upcomingReservations.filter(res => {
+  const futureRes = upcomingReservations.filter((res) => {
     if (activeRes && res.id === activeRes.id) return false;
-    return res.reservation_date > todayStr || (res.reservation_date === todayStr && res.start_time.substring(0, 5) > currentHM);
+    if (overdueRes && res.id === overdueRes.id) return false;
+    const timing = getReservationState(res, now);
+    return !timing.isEnded;
   });
 
   return (
@@ -579,7 +623,30 @@ export default function ClientDashboard() {
 
         {activeRes && <ActiveReservationCard reservation={activeRes} />}
 
-        {futureRes.length === 0 && !activeRes ? (
+        {overdueRes && (
+          <Card
+            variant="glass"
+            style={{
+              borderColor: Colors.error,
+              borderWidth: 1,
+              backgroundColor: "rgba(239, 68, 68, 0.1)",
+              marginBottom: Spacing.sm,
+              padding: Spacing.md,
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.error }} />
+              <Text style={{ color: "#FCA5A5", fontWeight: "700", fontSize: 13 }}>
+                Check-in Required at Cashier
+              </Text>
+            </View>
+            <Text style={{ color: "#FECACA", fontSize: 12, lineHeight: 16 }}>
+              Your session for {formatTime(overdueRes.start_time)} has started. Please check in with the cashier at the counter immediately to activate your reservation!
+            </Text>
+          </Card>
+        )}
+
+        {futureRes.length === 0 && !activeRes && !overdueRes ? (
           <Card variant="glass">
             <View style={styles.emptyCard}>
               <Text style={styles.emptyText}>
@@ -588,22 +655,36 @@ export default function ClientDashboard() {
             </View>
           </Card>
         ) : (
-          futureRes.map((res) => (
-            <Card key={res.id} variant="glass" style={styles.reservationCard}>
-              <View style={styles.reservationRow}>
-                <View style={styles.reservationInfo}>
-                  <Text style={styles.reservationDate}>{res.reservation_date}</Text>
-                  <Text style={styles.reservationTime}>
-                    {formatTime(res.start_time)} — {formatTime(res.end_time)}
-                  </Text>
+          futureRes.map((res) => {
+            const timing = getReservationState(res, now);
+            const pillColor = timing.isCheckedIn
+              ? Colors.success
+              : timing.is5MinBeforeStart
+              ? Colors.error
+              : Colors.secondary;
+            const pillLabel = timing.isCheckedIn
+              ? "Checked In"
+              : timing.is5MinBeforeStart
+              ? "Starts in 5m"
+              : "Awaiting Check-in";
+
+            return (
+              <Card key={res.id} variant="glass" style={styles.reservationCard}>
+                <View style={styles.reservationRow}>
+                  <View style={styles.reservationInfo}>
+                    <Text style={styles.reservationDate}>{res.reservation_date}</Text>
+                    <Text style={styles.reservationTime}>
+                      {formatTime(res.start_time)} — {formatTime(res.end_time)}
+                    </Text>
+                  </View>
+                  <View style={styles.statusPill}>
+                    <View style={[styles.statusDot, { backgroundColor: pillColor }]} />
+                    <Text style={[styles.statusPillText, { color: pillColor }]}>{pillLabel}</Text>
+                  </View>
                 </View>
-                <View style={styles.statusPill}>
-                  <View style={[styles.statusDot, { backgroundColor: res.status === 'pending' ? Colors.secondary : Colors.primary }]} />
-                  <Text style={styles.statusPillText}>{res.status}</Text>
-                </View>
-              </View>
-            </Card>
-          ))
+              </Card>
+            );
+          })
         )}
       </View>
 

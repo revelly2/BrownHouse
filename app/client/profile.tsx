@@ -2,7 +2,7 @@
 // Profile Screen — Swiss Glassmorphic Design
 // ============================================================================
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -16,14 +16,19 @@ import {
 import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import { useAuth } from "../../lib/auth";
+import { supabase } from "../../lib/supabase";
 import { Card } from "../../components/ui/Card";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { Badge } from "../../components/ui/Badge";
 import { Colors, Spacing, Typography, Radius } from "../../constants/colors";
+import { ReceiptModal, MembershipReceiptData } from "../../components/membership/ReceiptModal";
 
 export default function ProfileScreen() {
   const { profile, user, signOut, updateProfile } = useAuth();
+  const [membershipInfo, setMembershipInfo] = useState<any | null>(null);
+  const [receiptModalVisible, setReceiptModalVisible] = useState(false);
+  const [receiptData, setReceiptData] = useState<MembershipReceiptData | null>(null);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [updatingPhoto, setUpdatingPhoto] = useState(false);
@@ -36,6 +41,54 @@ export default function ProfileScreen() {
     target_weight_kg: profile?.target_weight_kg?.toString() ?? "",
     fitness_goal: profile?.fitness_goal ?? "",
   });
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    const fetchMembership = async () => {
+      const { data } = await supabase
+        .from("client_memberships")
+        .select("*, membership:memberships(*)")
+        .eq("client_id", profile.id)
+        .eq("status", "active")
+        .order("end_date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (data) {
+        setMembershipInfo(data);
+      }
+    };
+    fetchMembership();
+  }, [profile?.id]);
+
+  const viewMyReceipt = async () => {
+    if (!membershipInfo) return;
+    const { data: pay } = await supabase
+      .from("payments")
+      .select("*")
+      .eq("client_id", profile?.id)
+      .eq("payment_type", "membership")
+      .order("payment_date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    setReceiptData({
+      paymentId: pay ? pay.id : membershipInfo.id,
+      paymentDate: pay ? pay.payment_date : membershipInfo.created_at,
+      amount: pay ? Number(pay.amount) : Number(membershipInfo.membership?.price || 0),
+      paymentMethod: pay ? pay.payment_method : "cash",
+      clientName: `${profile?.first_name || ""} ${profile?.last_name || ""}`.trim() || "Member",
+      clientEmail: user?.email || null,
+      clientPhone: profile?.phone_number || null,
+      planName: membershipInfo.membership?.name || "Gym Membership",
+      durationDays: membershipInfo.membership?.duration_days,
+      startDate: membershipInfo.start_date,
+      endDate: membershipInfo.end_date,
+      adminName: "BrownHouse Staff",
+      currencySymbol: "₱",
+    });
+    setReceiptModalVisible(true);
+  };
 
   const handlePickImage = async () => {
     try {
@@ -208,6 +261,45 @@ export default function ProfileScreen() {
         )}
       </Card>
 
+      {/* Membership Status Card */}
+      <Card variant="glassElevated" style={{ padding: Spacing.lg, marginBottom: Spacing.lg }}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+          <View>
+            <Text style={{ fontSize: 10, color: Colors.primary, fontWeight: "700", letterSpacing: 1 }}>
+              GYM MEMBERSHIP
+            </Text>
+            <Text style={{ fontSize: 17, fontWeight: "700", color: Colors.light.text, marginTop: 2 }}>
+              {membershipInfo?.membership?.name || (membershipInfo ? "Active Plan" : "No Active Membership")}
+            </Text>
+          </View>
+          <Badge
+            variant={membershipInfo ? "success" : "info"}
+            label={membershipInfo ? "Active" : "Inactive"}
+            size="sm"
+          />
+        </View>
+
+        {membershipInfo ? (
+          <View style={{ marginTop: Spacing.md, gap: Spacing.xs }}>
+            <Text style={{ fontSize: 12, color: Colors.light.textSecondary }}>
+              Valid: {new Date(membershipInfo.start_date).toLocaleDateString()} — {new Date(membershipInfo.end_date).toLocaleDateString()}
+            </Text>
+            <View style={{ flexDirection: "row", justifyContent: "flex-end", marginTop: Spacing.sm }}>
+              <Button
+                title="📄 View Official Receipt"
+                variant="outline"
+                size="sm"
+                onPress={viewMyReceipt}
+              />
+            </View>
+          </View>
+        ) : (
+          <Text style={{ fontSize: 12, color: Colors.light.textTertiary, marginTop: Spacing.sm }}>
+            You do not currently have an active membership. Visit the gym front desk to enroll.
+          </Text>
+        )}
+      </Card>
+
       {/* Edit Form / Info Display */}
       <Card variant="glass" style={styles.formCard}>
         <View style={styles.formHeader}>
@@ -354,6 +446,13 @@ export default function ProfileScreen() {
       >
         <Text style={styles.signOutBtnText}>Sign Out</Text>
       </TouchableOpacity>
+
+      {/* Official Receipt Modal */}
+      <ReceiptModal
+        visible={receiptModalVisible}
+        onClose={() => setReceiptModalVisible(false)}
+        data={receiptData}
+      />
     </ScrollView>
   );
 }

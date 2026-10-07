@@ -8,6 +8,8 @@ Notifications.setNotificationHandler({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
@@ -51,25 +53,57 @@ export async function scheduleReservationNotifications(
   startDate: Date,
   endDate: Date
 ) {
-  if (Platform.OS === 'web') return; 
+  if (Platform.OS === 'web') return;
 
-  // Notification 1: At start time
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title: "Time for your workout!",
-      body: `Your reservation for ${equipmentName} starts now. Please confirm your arrival within 3 minutes.`,
-      sound: true,
-    },
-    trigger: startDate,
-  });
+  const now = new Date();
 
-  // Notification 2: At end time
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title: "Time is up!",
-      body: `Your reservation for ${equipmentName} has ended.`,
-      sound: true,
-    },
-    trigger: endDate,
-  });
+  // Helper safely scheduling a date notification if in the future
+  const scheduleIfFuture = async (targetDate: Date, title: string, body: string) => {
+    if (targetDate.getTime() <= now.getTime()) return;
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title,
+          body,
+          sound: true,
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
+          date: targetDate,
+        },
+      });
+    } catch (e) {
+      console.warn("Could not schedule notification:", e);
+    }
+  };
+
+  // Notification 1: 5 minutes before start
+  const fiveMinBeforeStart = new Date(startDate.getTime() - 5 * 60 * 1000);
+  await scheduleIfFuture(
+    fiveMinBeforeStart,
+    "5 Minutes Away — Equipment Ready",
+    `Your reservation for ${equipmentName} starts in 5 minutes! Head to the equipment and check in at the cashier.`
+  );
+
+  // Notification 2: At start time
+  await scheduleIfFuture(
+    startDate,
+    "Workout Time!",
+    `Your reservation for ${equipmentName} starts now. Ensure you have checked in at the cashier counter.`
+  );
+
+  // Notification 3: 5 minutes before end (Return and fix reminder)
+  const fiveMinBeforeEnd = new Date(endDate.getTime() - 5 * 60 * 1000);
+  await scheduleIfFuture(
+    fiveMinBeforeEnd,
+    "5 Mins Remaining — Wrap-Up Reminder",
+    `5 minutes left on ${equipmentName}! Please prepare to wipe down, return, and rack the equipment in place.`
+  );
+
+  // Notification 4: At end time
+  await scheduleIfFuture(
+    endDate,
+    "Session Completed",
+    `Your reservation for ${equipmentName} has ended. Thank you for racking the equipment!`
+  );
 }
