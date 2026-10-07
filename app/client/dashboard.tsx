@@ -368,11 +368,9 @@ export default function ClientDashboard() {
   const now = new Date();
   const todayStr = getLocalDateString(now);
   const activeRes = upcomingReservations.find((res) => getReservationState(res, now).isActive);
-  const overdueRes = upcomingReservations.find((res) => getReservationState(res, now).isMissedCheckIn);
 
   const futureRes = upcomingReservations.filter((res) => {
     if (activeRes && res.id === activeRes.id) return false;
-    if (overdueRes && res.id === overdueRes.id) return false;
     const timing = getReservationState(res, now);
     return !timing.isEnded;
   });
@@ -623,30 +621,7 @@ export default function ClientDashboard() {
 
         {activeRes && <ActiveReservationCard reservation={activeRes} />}
 
-        {overdueRes && (
-          <Card
-            variant="glass"
-            style={{
-              borderColor: Colors.error,
-              borderWidth: 1,
-              backgroundColor: "rgba(239, 68, 68, 0.1)",
-              marginBottom: Spacing.sm,
-              padding: Spacing.md,
-            }}
-          >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
-              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.error }} />
-              <Text style={{ color: "#FCA5A5", fontWeight: "700", fontSize: 13 }}>
-                Check-in Required at Front Desk
-              </Text>
-            </View>
-            <Text style={{ color: "#FECACA", fontSize: 12, lineHeight: 16 }}>
-              Your session for {formatTime(overdueRes.start_time)} has started. Please check in with the front desk at the counter immediately to activate your reservation!
-            </Text>
-          </Card>
-        )}
-
-        {futureRes.length === 0 && !activeRes && !overdueRes ? (
+        {futureRes.length === 0 && !activeRes ? (
           <Card variant="glass">
             <View style={styles.emptyCard}>
               <Text style={styles.emptyText}>
@@ -657,16 +632,12 @@ export default function ClientDashboard() {
         ) : (
           futureRes.map((res) => {
             const timing = getReservationState(res, now);
-            const pillColor = timing.isCheckedIn
-              ? Colors.success
-              : timing.is5MinBeforeStart
-              ? Colors.error
-              : Colors.secondary;
-            const pillLabel = timing.isCheckedIn
-              ? "Checked In"
-              : timing.is5MinBeforeStart
+            const pillColor = timing.is5MinBeforeStart
+              ? "#FCD34D"
+              : Colors.success;
+            const pillLabel = timing.is5MinBeforeStart
               ? "Starts in 5m"
-              : "Awaiting Check-in";
+              : "Confirmed";
 
             return (
               <Card key={res.id} variant="glass" style={styles.reservationCard}>

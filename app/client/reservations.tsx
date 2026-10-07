@@ -112,7 +112,7 @@ export default function ReservationsScreen() {
         await sendReservationNotification(
           profile.id,
           "5 Minutes Away!",
-          `Your reservation for ${equipmentName} starts in 5 minutes! Please head to the front desk counter to check in.`
+          `Your reservation for ${equipmentName} starts in 5 minutes! Head to the equipment to begin your workout.`
         );
         const updatedNotes = serializeReservationMetadata(
           { notified_5min_start: true },
@@ -143,8 +143,8 @@ export default function ReservationsScreen() {
           .eq("id", res.id);
       }
 
-      // 3. Auto-complete session when end time arrives for checked-in user
-      if (timing.isCheckedIn && timing.isEnded) {
+      // 3. Auto-complete session when end time arrives
+      if (timing.isEnded) {
         const completeKey = `${res.id}-completed`;
         if (!processedNotifs.current.has(completeKey)) {
           processedNotifs.current.add(completeKey);
@@ -237,11 +237,9 @@ export default function ReservationsScreen() {
                         ? Colors.success
                         : item.status === "cancelled"
                         ? Colors.error
-                        : timing.isCheckedIn
-                        ? Colors.success
-                        : timing.isMissedCheckIn
-                        ? Colors.error
-                        : Colors.secondary,
+                        : timing.isActive
+                        ? Colors.primary
+                        : Colors.success,
                   },
                 ]}
               />
@@ -254,11 +252,9 @@ export default function ReservationsScreen() {
                         ? Colors.success
                         : item.status === "cancelled"
                         ? Colors.error
-                        : timing.isCheckedIn
-                        ? Colors.success
-                        : timing.isMissedCheckIn
-                        ? Colors.error
-                        : Colors.secondary,
+                        : timing.isActive
+                        ? Colors.primary
+                        : Colors.success,
                   },
                 ]}
               >
@@ -266,11 +262,9 @@ export default function ReservationsScreen() {
                   ? "Completed"
                   : item.status === "cancelled"
                   ? "Cancelled"
-                  : timing.isCheckedIn
-                  ? "Checked In"
-                  : timing.isMissedCheckIn
-                  ? "Check-in Overdue"
-                  : "Awaiting Check-in"}
+                  : timing.isActive
+                  ? "Active Now"
+                  : "Confirmed"}
               </Text>
             </View>
           )}
@@ -291,7 +285,7 @@ export default function ReservationsScreen() {
           </View>
         </View>
 
-        {/* ================= ACTIVE STATE (CHECKED-IN & IN-SESSION) ================= */}
+        {/* ================= ACTIVE STATE (IN-SESSION) ================= */}
         {timing.isActive && (
           <View style={styles.activeSection}>
             <View style={styles.countdownRow}>
@@ -337,41 +331,24 @@ export default function ReservationsScreen() {
           </View>
         )}
 
-        {/* ================= AWAITING CHECK-IN OR NOT CHECKED IN ================= */}
-        {item.status === "confirmed" && !timing.isCheckedIn && (
+        {/* ================= UPCOMING RESERVATION NOTICE ================= */}
+        {item.status === "confirmed" && !timing.isActive && !timing.isEnded && (
           <View style={styles.checkinNoticeContainer}>
-            {timing.isMissedCheckIn ? (
-              <View style={styles.overdueBanner}>
-                <Text style={styles.overdueTitle}>⚠️ Reservation Time Started</Text>
-                <Text style={styles.overdueText}>
-                  You have not been checked in at the front desk. Please present yourself at the counter immediately to proceed, or your slot may be cancelled.
-                </Text>
-              </View>
-            ) : timing.is5MinBeforeStart ? (
+            {timing.is5MinBeforeStart ? (
               <View style={styles.soonBanner}>
                 <Text style={styles.soonTitle}>🔔 Starts in 5 Minutes</Text>
                 <Text style={styles.soonText}>
-                  Head over to the front desk counter to check in so your equipment session activates on time!
+                  Head over to the equipment! Your session will activate automatically at {formatTime(item.start_time)}.
                 </Text>
               </View>
             ) : (
-              <View style={styles.pendingBanner}>
-                <Text style={styles.pendingTitle}>Front Desk Check-in Required</Text>
-                <Text style={styles.pendingText}>
-                  Please present this booking to the front desk counter upon your arrival at the gym. Staff will check you in to activate your reservation.
+              <View style={styles.confirmedBanner}>
+                <Text style={styles.confirmedTitle}>✓ Confirmed — Ready for Use</Text>
+                <Text style={styles.confirmedText}>
+                  Your booking is automatically confirmed. Simply proceed to the equipment when your scheduled slot begins at {formatTime(item.start_time)}.
                 </Text>
               </View>
             )}
-          </View>
-        )}
-
-        {/* Checked in early, awaiting start time */}
-        {item.status === "confirmed" && timing.isCheckedIn && !timing.isStarted && !timing.isEnded && (
-          <View style={styles.earlyCheckinContainer}>
-            <Text style={styles.earlyCheckinTitle}>✓ Checked in by Staff</Text>
-            <Text style={styles.earlyCheckinText}>
-              Your reservation is ready. It will automatically become ACTIVE at {formatTime(item.start_time)}.
-            </Text>
           </View>
         )}
 
@@ -696,22 +673,22 @@ const styles = StyleSheet.create({
   checkinNoticeContainer: {
     marginTop: Spacing.xs,
   },
-  pendingBanner: {
+  confirmedBanner: {
     padding: Spacing.md,
     borderRadius: Radius.md,
-    backgroundColor: "rgba(251, 191, 36, 0.06)",
+    backgroundColor: "rgba(34, 197, 94, 0.08)",
     borderWidth: 1,
-    borderColor: "rgba(251, 191, 36, 0.18)",
+    borderColor: "rgba(34, 197, 94, 0.22)",
   },
-  pendingTitle: {
+  confirmedTitle: {
     fontSize: 12,
     fontWeight: "700",
-    color: Colors.primary,
+    color: "#4ADE80",
     marginBottom: 4,
   },
-  pendingText: {
+  confirmedText: {
     fontSize: 12,
-    color: Colors.light.textSecondary,
+    color: "#BBF7D0",
     lineHeight: 16,
   },
   soonBanner: {
@@ -730,43 +707,6 @@ const styles = StyleSheet.create({
   soonText: {
     fontSize: 12,
     color: "#FEF3C7",
-    lineHeight: 16,
-  },
-  overdueBanner: {
-    padding: Spacing.md,
-    borderRadius: Radius.md,
-    backgroundColor: "rgba(239, 68, 68, 0.12)",
-    borderWidth: 1,
-    borderColor: "rgba(239, 68, 68, 0.35)",
-  },
-  overdueTitle: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#FCA5A5",
-    marginBottom: 4,
-  },
-  overdueText: {
-    fontSize: 12,
-    color: "#FECACA",
-    lineHeight: 16,
-  },
-  earlyCheckinContainer: {
-    marginTop: Spacing.xs,
-    padding: Spacing.md,
-    borderRadius: Radius.md,
-    backgroundColor: "rgba(34, 197, 94, 0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(34, 197, 94, 0.25)",
-  },
-  earlyCheckinTitle: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#86EFAC",
-    marginBottom: 2,
-  },
-  earlyCheckinText: {
-    fontSize: 12,
-    color: Colors.light.textSecondary,
     lineHeight: 16,
   },
   cancelledBanner: {

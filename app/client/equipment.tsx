@@ -243,8 +243,8 @@ export default function EquipmentScreen() {
       scheduleReservationNotifications(selectedEquipment.name, startDateTime, endDateTime);
 
       showAlert(
-        "Reservation Booked",
-        "Your equipment is booked! Please present your booking to the front desk upon arrival to check in and activate your session.",
+        "Reservation Confirmed",
+        "Your equipment reservation is confirmed! It will automatically activate when your scheduled time begins.",
         [
           { text: "View Bookings", onPress: () => router.push("/client/reservations") },
           { text: "OK", style: "cancel" },

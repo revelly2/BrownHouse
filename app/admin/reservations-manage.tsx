@@ -32,7 +32,7 @@ interface ReservationDetail extends Reservation {
   equipment?: { name: string; type: string };
 }
 
-type FilterTab = "needs_checkin" | "active" | "all" | "history";
+type FilterTab = "active" | "upcoming" | "all" | "history";
 
 export default function ReservationsManageScreen() {
   const { profile } = useAuth();
@@ -40,7 +40,7 @@ export default function ReservationsManageScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [filterTab, setFilterTab] = useState<FilterTab>("needs_checkin");
+  const [filterTab, setFilterTab] = useState<FilterTab>("active");
   const [searchQuery, setSearchQuery] = useState("");
 
   const [alertVisible, setAlertVisible] = useState(false);
@@ -133,55 +133,15 @@ export default function ReservationsManageScreen() {
     setRefreshing(false);
   };
 
-  // Staff checks in the client when they arrive at the counter
-  const handleCheckIn = async (item: ReservationDetail) => {
-    const timing = getReservationState(item, currentTime);
-    const equipmentName = item.equipment?.name || "Equipment";
-
-    const updatedNotes = serializeReservationMetadata(
-      {
-        checked_in: true,
-        checked_in_at: new Date().toISOString(),
-        checked_in_by: profile?.role || "admin",
-      },
-      item.notes
-    );
-
-    const { error } = await supabase
-      .from("reservations")
-      .update({ notes: updatedNotes })
-      .eq("id", item.id);
-
-    if (error) {
-      showAlert("Error Checking In", error.message);
-      return;
-    }
-
-    // Send notification to the client
-    const statusMsg = timing.isStarted
-      ? "Your session is now ACTIVE! Head to your equipment."
-      : `Your session will activate at ${formatTime(item.start_time)}.`;
-
-    await sendReservationNotification(
-      item.client_id,
-      "Checked In!",
-      `You are checked in for ${equipmentName}. ${statusMsg}`
-    );
-
-    showAlert("Success", `${item.profiles?.first_name || "Client"} has been checked in!`);
-    fetchReservations();
-  };
-
-  // Admin cancels reservation if the user is not present / no-show
-  const handleCancelAbsent = (item: ReservationDetail) => {
+  // Admin cancels a reservation
+  const handleCancelBooking = (item: ReservationDetail) => {
     const clientName = `${item.profiles?.first_name ?? ""} ${item.profiles?.last_name ?? ""}`.trim() || "Client";
     const equipmentName = item.equipment?.name || "Equipment";
 
     const doCancel = async () => {
       const updatedNotes = serializeReservationMetadata(
         {
-          cancel_reason: "Absent / Not checked in at front desk",
-          auto_cancelled: true,
+          cancel_reason: "Cancelled by Administrator",
         },
         item.notes
       );
@@ -202,7 +162,7 @@ export default function ReservationsManageScreen() {
       await sendReservationNotification(
         item.client_id,
         "Reservation Cancelled",
-        `Your reservation for ${equipmentName} was cancelled because check-in was not completed on time.`
+        `Your reservation for ${equipmentName} was cancelled by administrator.`
       );
 
       showAlert("Cancelled", `Reservation for ${clientName} marked as cancelled.`);
@@ -210,8 +170,8 @@ export default function ReservationsManageScreen() {
     };
 
     showAlert(
-      "Cancel Reservation (No-Show)",
-      `Cancel reservation for ${clientName} on ${equipmentName}? Reason: User absent at front desk.`,
+      "Cancel Reservation",
+      `Are you sure you want to cancel the reservation for ${clientName} on ${equipmentName}?`,
       [
         { text: "Keep Booking", style: "cancel" },
         { text: "Yes, Cancel", style: "destructive", onPress: doCancel },
@@ -244,26 +204,26 @@ export default function ReservationsManageScreen() {
       return false;
     }
 
-    if (filterTab === "needs_checkin") {
-      return r.status === "confirmed" && !timing.isCheckedIn && !timing.isEnded;
-    }
     if (filterTab === "active") {
       return timing.isActive;
+    }
+    if (filterTab === "upcoming") {
+      return r.status === "confirmed" && !timing.isActive && !timing.isEnded;
     }
     if (filterTab === "history") {
       return r.status === "completed" || r.status === "cancelled" || timing.isEnded;
     }
-    return true; // "all"
+    return r.status === "confirmed" || !timing.isEnded; // "all"
   });
-
-  const needsCheckinCount = reservations.filter((r) => {
-    const timing = getReservationState(r, currentTime);
-    return r.status === "confirmed" && !timing.isCheckedIn && !timing.isEnded;
-  }).length;
 
   const activeCount = reservations.filter((r) => {
     const timing = getReservationState(r, currentTime);
     return timing.isActive;
+  }).length;
+
+  const upcomingCount = reservations.filter((r) => {
+    const timing = getReservationState(r, currentTime);
+    return r.status === "confirmed" && !timing.isActive && !timing.isEnded;
   }).length;
 
   const renderItem = ({ item }: { item: ReservationDetail }) => {
@@ -277,7 +237,6 @@ export default function ReservationsManageScreen() {
         style={[
           styles.card,
           timing.isActive ? styles.activeCard : undefined,
-          timing.isMissedCheckIn ? styles.missedCard : undefined,
         ] as any}
       >
         <View style={styles.cardHeader}>
@@ -298,26 +257,24 @@ export default function ReservationsManageScreen() {
             <View
               style={[
                 styles.statusBadge,
-                timing.isCheckedIn && styles.statusBadgeSuccess,
-                timing.isMissedCheckIn && styles.statusBadgeDanger,
+                item.status === "confirmed" && styles.statusBadgeSuccess,
+                item.status === "completed" && styles.statusBadgeSuccess,
+                item.status === "cancelled" && styles.statusBadgeDanger,
               ]}
             >
               <Text
                 style={[
                   styles.statusText,
-                  timing.isCheckedIn && styles.statusTextSuccess,
-                  timing.isMissedCheckIn && styles.statusTextDanger,
+                  item.status === "confirmed" && styles.statusTextSuccess,
+                  item.status === "completed" && styles.statusTextSuccess,
+                  item.status === "cancelled" && styles.statusTextDanger,
                 ]}
               >
                 {item.status === "completed"
                   ? "Completed"
                   : item.status === "cancelled"
                   ? "Cancelled"
-                  : timing.isCheckedIn
-                  ? "Checked In"
-                  : timing.isMissedCheckIn
-                  ? "Absent / Past Start"
-                  : "Awaiting Check-in"}
+                  : "Confirmed"}
               </Text>
             </View>
           )}
@@ -349,47 +306,10 @@ export default function ReservationsManageScreen() {
           )}
         </View>
 
-        {/* Check-in Context Alerts */}
-        {timing.isMissedCheckIn && !timing.isCheckedIn && (
-          <View style={styles.overdueAlert}>
-            <Text style={styles.overdueAlertText}>
-              ⚠️ User has NOT checked in at the counter. Session time has already started!
-            </Text>
-          </View>
-        )}
-
-        {timing.isCheckedIn && (
-          <View style={styles.checkedInInfo}>
-            <Text style={styles.checkedInInfoText}>
-              ✓ Checked in by staff {timing.metadata.checked_in_at ? `(${new Date(timing.metadata.checked_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})` : ""}
-            </Text>
-          </View>
-        )}
-
         {/* Action Buttons for Admin */}
         {item.status === "confirmed" && (
           <View style={styles.cardActions}>
-            {/* If not checked in yet: Admin can check them in OR cancel for no-show */}
-            {!timing.isCheckedIn ? (
-              <View style={styles.actionButtonGroup}>
-                <TouchableOpacity
-                  style={[styles.actionBtn, styles.checkInBtn]}
-                  onPress={() => handleCheckIn(item)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.checkInBtnText}>✓ Check In Client</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.actionBtn, styles.cancelBtn]}
-                  onPress={() => handleCancelAbsent(item)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.cancelBtnText}>✕ Cancel (No-Show)</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              /* If checked in: Admin can complete or cancel */
+            {timing.isActive ? (
               <View style={styles.actionButtonGroup}>
                 <TouchableOpacity
                   style={[styles.actionBtn, styles.completeBtn]}
@@ -401,10 +321,20 @@ export default function ReservationsManageScreen() {
 
                 <TouchableOpacity
                   style={[styles.actionBtn, styles.cancelBtn]}
-                  onPress={() => handleCancelAbsent(item)}
+                  onPress={() => handleCancelBooking(item)}
                   activeOpacity={0.7}
                 >
                   <Text style={styles.cancelBtnText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.actionButtonGroup}>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.cancelBtn]}
+                  onPress={() => handleCancelBooking(item)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.cancelBtnText}>Cancel Booking</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -421,27 +351,27 @@ export default function ReservationsManageScreen() {
         <Text style={styles.headerLabel}>Admin</Text>
         <Text style={styles.title}>Equipment Bookings</Text>
         <Text style={styles.subtitle}>
-          Check in arriving members & manage active workout stations
+          Monitor active workout stations & manage equipment schedules
         </Text>
       </View>
 
       {/* Filter Tabs */}
       <View style={styles.tabContainer}>
         <TouchableOpacity
-          style={[styles.tab, filterTab === "needs_checkin" && styles.tabActive]}
-          onPress={() => setFilterTab("needs_checkin")}
-        >
-          <Text style={[styles.tabText, filterTab === "needs_checkin" && styles.tabTextActive]}>
-            Needs Check-in {needsCheckinCount > 0 ? `(${needsCheckinCount})` : ""}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
           style={[styles.tab, filterTab === "active" && styles.tabActive]}
           onPress={() => setFilterTab("active")}
         >
           <Text style={[styles.tabText, filterTab === "active" && styles.tabTextActive]}>
             Active Now {activeCount > 0 ? `(${activeCount})` : ""}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.tab, filterTab === "upcoming" && styles.tabActive]}
+          onPress={() => setFilterTab("upcoming")}
+        >
+          <Text style={[styles.tabText, filterTab === "upcoming" && styles.tabTextActive]}>
+            Upcoming {upcomingCount > 0 ? `(${upcomingCount})` : ""}
           </Text>
         </TouchableOpacity>
 
@@ -494,10 +424,10 @@ export default function ReservationsManageScreen() {
               <Text style={styles.emptyIconText}>—</Text>
             </View>
             <Text style={styles.emptyText}>
-              {filterTab === "needs_checkin"
-                ? "No pending check-ins right now"
-                : filterTab === "active"
+              {filterTab === "active"
                 ? "No active equipment sessions currently"
+                : filterTab === "upcoming"
+                ? "No upcoming reservations scheduled"
                 : "No reservations found"}
             </Text>
           </View>

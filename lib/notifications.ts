@@ -82,14 +82,14 @@ export async function scheduleReservationNotifications(
   await scheduleIfFuture(
     fiveMinBeforeStart,
     "5 Minutes Away — Equipment Ready",
-    `Your reservation for ${equipmentName} starts in 5 minutes! Head to the equipment and check in at the front desk.`
+    `Your reservation for ${equipmentName} starts in 5 minutes! Head to the equipment to begin your workout.`
   );
 
   // Notification 2: At start time
   await scheduleIfFuture(
     startDate,
     "Workout Time!",
-    `Your reservation for ${equipmentName} starts now. Ensure you have checked in at the front desk counter.`
+    `Your reservation for ${equipmentName} starts now. Your session is active!`
   );
 
   // Notification 3: 5 minutes before end (Return and fix reminder)

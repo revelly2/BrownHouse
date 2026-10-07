@@ -86,16 +86,12 @@ export function getReservationState(reservation: Reservation, currentTime: Date 
 
   const isStarted = nowMs >= startMs && nowMs < endMs;
   const isEnded = nowMs >= endMs;
-  const isCheckedIn = Boolean(metadata.checked_in);
 
-  // Active means: confirmed, user checked in by staff, and within session window
-  const isActive = reservation.status === "confirmed" && isCheckedIn && isStarted;
+  // Active means: confirmed and currently within the scheduled session time window (automatically active!)
+  const isActive = reservation.status === "confirmed" && isStarted && !isEnded;
 
-  // Awaiting check-in: confirmed, not yet checked in, and session hasn't ended
-  const isAwaitingCheckIn = reservation.status === "confirmed" && !isCheckedIn && !isEnded;
-
-  // Missed check-in / absent: start time reached or passed, but user never checked in at front desk
-  const isMissedCheckIn = reservation.status === "confirmed" && !isCheckedIn && nowMs >= startMs;
+  // Upcoming: confirmed and start time has not arrived yet
+  const isUpcoming = reservation.status === "confirmed" && !isStarted && !isEnded;
 
   // Timing flags:
   // 5 minutes away from start (between start - 5min and start)
@@ -109,7 +105,7 @@ export function getReservationState(reservation: Reservation, currentTime: Date 
   const fiveMinBeforeEndMs = endMs - 5 * 60 * 1000;
   const is5MinBeforeEnd =
     reservation.status === "confirmed" &&
-    isCheckedIn &&
+    isStarted &&
     nowMs >= fiveMinBeforeEndMs &&
     nowMs < endMs;
 
@@ -133,10 +129,8 @@ export function getReservationState(reservation: Reservation, currentTime: Date 
     isToday,
     isStarted,
     isEnded,
-    isCheckedIn,
     isActive,
-    isAwaitingCheckIn,
-    isMissedCheckIn,
+    isUpcoming,
     is5MinBeforeStart,
     is5MinBeforeEnd,
     timeUntilStartMs,
