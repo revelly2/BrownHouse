@@ -47,7 +47,7 @@ export default function Index() {
     return <Redirect href="/(auth)/login" />;
   }
 
-  if (role === "admin" || role === "trainer" || (role as string) === "cashier") {
+  if (role === "admin") {
     return <Redirect href="/admin/dashboard" />;
   }
 

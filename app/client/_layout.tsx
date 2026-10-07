@@ -51,14 +51,14 @@ export default function ClientLayout() {
 
   return (
     <Tabs
-      sceneContainerStyle={{ 
-        flex: 1,
-        backgroundColor: "transparent",
-        marginLeft: isDesktop ? 250 : 0 
-      }}
       tabBar={isDesktop ? (props) => <DesktopSidebar {...props} /> : undefined}
       screenOptions={{
         headerShown: false,
+        sceneStyle: {
+          flex: 1,
+          backgroundColor: "transparent",
+          marginLeft: isDesktop ? 250 : 0,
+        },
         tabBarActiveTintColor: Colors.primary,
         tabBarInactiveTintColor: Colors.light.textTertiary,
         tabBarStyle: [

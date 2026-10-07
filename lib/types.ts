@@ -5,7 +5,7 @@
 
 // ---- Enums (mapped from CHECK constraints) ----
 
-export type UserRole = "admin" | "trainer" | "client";
+export type UserRole = "admin" | "client";
 export type EquipmentType = "cardio" | "strength";
 export type EquipmentStatus = "available" | "maintenance" | "occupied";
 export type ReservationStatus = "confirmed" | "cancelled" | "completed";

@@ -229,7 +229,7 @@ export default function SettingsScreen() {
               <Sparkles size={20} color={Colors.primary} />
             </View>
             <View style={styles.settingInfo}>
-              <Text style={styles.settingTitle}>AI Trainer Features</Text>
+              <Text style={styles.settingTitle}>AI Workout Coach Features</Text>
               <Text style={styles.settingDesc}>Enable AI-generated workout recommendations.</Text>
             </View>
             <Switch

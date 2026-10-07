@@ -337,7 +337,7 @@ export default function LoginScreen() {
                 onPress={() => window.open(apkDownloadUrl, '_blank')}
                 variant="outline"
                 size="md"
-                leftIcon={<Download size={18} color={Colors.primary} />}
+                icon={<Download size={18} color={Colors.primary} />}
                 style={{ borderColor: Colors.primary }}
                 textStyle={{ color: Colors.primary }}
               />
@@ -636,7 +636,7 @@ const styles = StyleSheet.create({
     padding: Spacing["3xl"],
   },
   coverOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...(StyleSheet.absoluteFill as object),
     backgroundColor: "rgba(0,0,0,0.2)",
   },
   fallbackCover: {

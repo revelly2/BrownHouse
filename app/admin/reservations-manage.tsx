@@ -1,5 +1,5 @@
 // ============================================================================
-// Admin & Cashier Reservations Management — Glassmorphic Design
+// Admin Reservations Management — Glassmorphic Design
 // ============================================================================
 
 import React, { useEffect, useState } from "react";
@@ -133,7 +133,7 @@ export default function ReservationsManageScreen() {
     setRefreshing(false);
   };
 
-  // Cashier checks in the client when they arrive at the counter
+  // Staff checks in the client when they arrive at the counter
   const handleCheckIn = async (item: ReservationDetail) => {
     const timing = getReservationState(item, currentTime);
     const equipmentName = item.equipment?.name || "Equipment";
@@ -142,7 +142,7 @@ export default function ReservationsManageScreen() {
       {
         checked_in: true,
         checked_in_at: new Date().toISOString(),
-        checked_in_by: profile?.role || "cashier",
+        checked_in_by: profile?.role || "admin",
       },
       item.notes
     );
@@ -164,7 +164,7 @@ export default function ReservationsManageScreen() {
 
     await sendReservationNotification(
       item.client_id,
-      "Checked In by Cashier!",
+      "Checked In!",
       `You are checked in for ${equipmentName}. ${statusMsg}`
     );
 
@@ -172,7 +172,7 @@ export default function ReservationsManageScreen() {
     fetchReservations();
   };
 
-  // Cashier cancels reservation if the user is not present / no-show
+  // Admin cancels reservation if the user is not present / no-show
   const handleCancelAbsent = (item: ReservationDetail) => {
     const clientName = `${item.profiles?.first_name ?? ""} ${item.profiles?.last_name ?? ""}`.trim() || "Client";
     const equipmentName = item.equipment?.name || "Equipment";
@@ -180,7 +180,7 @@ export default function ReservationsManageScreen() {
     const doCancel = async () => {
       const updatedNotes = serializeReservationMetadata(
         {
-          cancel_reason: "Absent / Not checked in with cashier",
+          cancel_reason: "Absent / Not checked in at front desk",
           auto_cancelled: true,
         },
         item.notes
@@ -202,7 +202,7 @@ export default function ReservationsManageScreen() {
       await sendReservationNotification(
         item.client_id,
         "Reservation Cancelled",
-        `Your reservation for ${equipmentName} was cancelled by the cashier because check-in was not completed on time.`
+        `Your reservation for ${equipmentName} was cancelled because check-in was not completed on time.`
       );
 
       showAlert("Cancelled", `Reservation for ${clientName} marked as cancelled.`);
@@ -211,7 +211,7 @@ export default function ReservationsManageScreen() {
 
     showAlert(
       "Cancel Reservation (No-Show)",
-      `Cancel reservation for ${clientName} on ${equipmentName}? Reason: User absent at cashier counter.`,
+      `Cancel reservation for ${clientName} on ${equipmentName}? Reason: User absent at front desk.`,
       [
         { text: "Keep Booking", style: "cancel" },
         { text: "Yes, Cancel", style: "destructive", onPress: doCancel },
@@ -361,15 +361,15 @@ export default function ReservationsManageScreen() {
         {timing.isCheckedIn && (
           <View style={styles.checkedInInfo}>
             <Text style={styles.checkedInInfoText}>
-              ✓ Checked in by cashier {timing.metadata.checked_in_at ? `(${new Date(timing.metadata.checked_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})` : ""}
+              ✓ Checked in by staff {timing.metadata.checked_in_at ? `(${new Date(timing.metadata.checked_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})` : ""}
             </Text>
           </View>
         )}
 
-        {/* Action Buttons for Cashier / Admin */}
+        {/* Action Buttons for Admin */}
         {item.status === "confirmed" && (
           <View style={styles.cardActions}>
-            {/* If not checked in yet: Cashier can check them in OR cancel for no-show */}
+            {/* If not checked in yet: Admin can check them in OR cancel for no-show */}
             {!timing.isCheckedIn ? (
               <View style={styles.actionButtonGroup}>
                 <TouchableOpacity
@@ -389,7 +389,7 @@ export default function ReservationsManageScreen() {
                 </TouchableOpacity>
               </View>
             ) : (
-              /* If checked in: Cashier can complete or cancel */
+              /* If checked in: Admin can complete or cancel */
               <View style={styles.actionButtonGroup}>
                 <TouchableOpacity
                   style={[styles.actionBtn, styles.completeBtn]}
@@ -418,7 +418,7 @@ export default function ReservationsManageScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerLabel}>Cashier & Admin</Text>
+        <Text style={styles.headerLabel}>Admin</Text>
         <Text style={styles.title}>Equipment Bookings</Text>
         <Text style={styles.subtitle}>
           Check in arriving members & manage active workout stations

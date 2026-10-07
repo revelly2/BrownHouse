@@ -88,7 +88,7 @@ async function main() {
   console.log(`- Equipment: ${equip.name}`);
   console.log(`- Date: ${dateStr}`);
   console.log(`- Time: ${startTime.slice(0, 5)} - ${endTime.slice(0, 5)}`);
-  console.log(`- Status: confirmed (Awaiting Cashier Check-in)`);
+  console.log(`- Status: confirmed (Awaiting Front Desk Check-in)`);
   console.log("\nWhat to test now:");
   console.log("1. Open http://localhost:8081/client/reservations -> Shows 'Awaiting Check-in'");
   console.log("2. Open http://localhost:8081/admin/reservations-manage -> Click '✓ Check In Client'");

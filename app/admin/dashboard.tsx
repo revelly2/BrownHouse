@@ -910,7 +910,7 @@ export default function AdminDashboard() {
 
                   <Text style={styles.inputLabel}>System Role</Text>
                   <View style={styles.rolePickerRow}>
-                    {["client", "trainer", "admin"].map((r) => (
+                    {["client", "admin"].map((r) => (
                       <TouchableOpacity
                         key={r}
                         style={[styles.roleChip, memberRole === r && styles.roleChipActive]}
@@ -1123,7 +1123,7 @@ export default function AdminDashboard() {
                 <View>
                   <Text style={styles.inputLabel}>5. Notes (Optional)</Text>
                   <Input
-                    placeholder="Walk-in, assisted session, trainer notes..."
+                    placeholder="Walk-in, assisted session, staff notes..."
                     value={resNotes}
                     onChangeText={setResNotes}
                   />
@@ -1253,7 +1253,6 @@ const styles = StyleSheet.create({
     gap: Spacing["4xl"],
   },
   rightColumn: {
-    width: 320,
     gap: Spacing["4xl"],
     ...Platform.select({
       default: {

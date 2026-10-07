@@ -1,5 +1,5 @@
 // ============================================================================
-// Reservations Screen — Swiss Glassmorphic Bookings with Cashier Check-in
+// Reservations Screen — Swiss Glassmorphic Bookings
 // ============================================================================
 
 import React, { useEffect, useState, useRef } from "react";
@@ -112,7 +112,7 @@ export default function ReservationsScreen() {
         await sendReservationNotification(
           profile.id,
           "5 Minutes Away!",
-          `Your reservation for ${equipmentName} starts in 5 minutes! Please head to the cashier counter to check in.`
+          `Your reservation for ${equipmentName} starts in 5 minutes! Please head to the front desk counter to check in.`
         );
         const updatedNotes = serializeReservationMetadata(
           { notified_5min_start: true },
@@ -344,21 +344,21 @@ export default function ReservationsScreen() {
               <View style={styles.overdueBanner}>
                 <Text style={styles.overdueTitle}>⚠️ Reservation Time Started</Text>
                 <Text style={styles.overdueText}>
-                  You have not been checked in by the cashier. Please present yourself at the cashier counter immediately to proceed, or your slot may be cancelled.
+                  You have not been checked in at the front desk. Please present yourself at the counter immediately to proceed, or your slot may be cancelled.
                 </Text>
               </View>
             ) : timing.is5MinBeforeStart ? (
               <View style={styles.soonBanner}>
                 <Text style={styles.soonTitle}>🔔 Starts in 5 Minutes</Text>
                 <Text style={styles.soonText}>
-                  Head over to the cashier counter to check in so your equipment session activates on time!
+                  Head over to the front desk counter to check in so your equipment session activates on time!
                 </Text>
               </View>
             ) : (
               <View style={styles.pendingBanner}>
-                <Text style={styles.pendingTitle}>Cashier Check-in Required</Text>
+                <Text style={styles.pendingTitle}>Front Desk Check-in Required</Text>
                 <Text style={styles.pendingText}>
-                  Please present this booking to the cashier counter upon your arrival at the gym. The cashier will check you in to activate your reservation.
+                  Please present this booking to the front desk counter upon your arrival at the gym. Staff will check you in to activate your reservation.
                 </Text>
               </View>
             )}
@@ -368,7 +368,7 @@ export default function ReservationsScreen() {
         {/* Checked in early, awaiting start time */}
         {item.status === "confirmed" && timing.isCheckedIn && !timing.isStarted && !timing.isEnded && (
           <View style={styles.earlyCheckinContainer}>
-            <Text style={styles.earlyCheckinTitle}>✓ Checked in by Cashier</Text>
+            <Text style={styles.earlyCheckinTitle}>✓ Checked in by Staff</Text>
             <Text style={styles.earlyCheckinText}>
               Your reservation is ready. It will automatically become ACTIVE at {formatTime(item.start_time)}.
             </Text>
@@ -382,7 +382,7 @@ export default function ReservationsScreen() {
               {timing.metadata.cancel_reason
                 ? `Cancelled: ${timing.metadata.cancel_reason}`
                 : timing.metadata.auto_cancelled
-                ? "Cancelled: Absent / No-show at cashier counter"
+                ? "Cancelled: Absent / No-show at front desk"
                 : "Reservation Cancelled"}
             </Text>
           </View>

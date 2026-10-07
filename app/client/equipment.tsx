@@ -244,7 +244,7 @@ export default function EquipmentScreen() {
 
       showAlert(
         "Reservation Booked",
-        "Your equipment is booked! Please present your booking to the cashier upon arrival to check in and activate your session.",
+        "Your equipment is booked! Please present your booking to the front desk upon arrival to check in and activate your session.",
         [
           { text: "View Bookings", onPress: () => router.push("/client/reservations") },
           { text: "OK", style: "cancel" },
@@ -433,7 +433,7 @@ export default function EquipmentScreen() {
                             isSelected && { color: "rgba(0, 0, 0, 0.75)" },
                           ]}
                         >
-                          Test live active flow: Cashier checks in → Becomes ACTIVE immediately!
+                          Test live active flow: Staff checks in → Becomes ACTIVE immediately!
                         </Text>
                       </TouchableOpacity>
                     );

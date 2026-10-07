@@ -637,11 +637,11 @@ export default function ClientDashboard() {
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
               <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.error }} />
               <Text style={{ color: "#FCA5A5", fontWeight: "700", fontSize: 13 }}>
-                Check-in Required at Cashier
+                Check-in Required at Front Desk
               </Text>
             </View>
             <Text style={{ color: "#FECACA", fontSize: 12, lineHeight: 16 }}>
-              Your session for {formatTime(overdueRes.start_time)} has started. Please check in with the cashier at the counter immediately to activate your reservation!
+              Your session for {formatTime(overdueRes.start_time)} has started. Please check in with the front desk at the counter immediately to activate your reservation!
             </Text>
           </Card>
         )}

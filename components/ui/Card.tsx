@@ -4,11 +4,11 @@
 // ============================================================================
 
 import React, { PropsWithChildren } from "react";
-import { View, StyleSheet, ViewStyle } from "react-native";
+import { View, StyleSheet, StyleProp, ViewStyle } from "react-native";
 import { Colors, Radius, Spacing } from "../../constants/colors";
 
 interface CardProps extends PropsWithChildren {
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   variant?: "default" | "elevated" | "outlined" | "glass" | "glassElevated";
   padding?: "none" | "sm" | "md" | "lg";
 }

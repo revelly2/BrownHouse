@@ -23,13 +23,12 @@
 
 ## 1. Project Overview
 
-**GymReserve AI** (`balneg`) is a mobile-first application for managing a gym facility. It supports three user roles:
+**GymReserve AI** (`balneg`) is a mobile-first application for managing a gym facility. It supports two user roles:
 
 | Role | Capabilities |
 |------|-------------|
 | **Client** | Book equipment, track workouts, view AI-generated recommendations, manage profile |
-| **Admin** | Manage equipment, approve/cancel reservations, view all users |
-| **Trainer** | Same access level as Admin |
+| **Admin** | Manage equipment, approve/cancel reservations, manage memberships & users |
 
 The app uses **Supabase** as its backend (auth, database, real-time, storage) and **Expo** as the cross-platform framework targeting **Android**, **iOS**, and **Web**.
 
@@ -186,14 +185,14 @@ Routes are defined by the file system under `app/`. Special conventions:
 
 `lib/auth.tsx` exports an `AuthProvider` and `useAuth()` hook. On mount it:
 1. Reads the persisted Supabase session from `SecureStore`
-2. Fetches the user's `profile` row to determine their **role** (`admin | trainer | client`)
+2. Fetches the user's `profile` row to determine their **role** (`admin | client`)
 3. Listens to real-time auth state changes
 
 `app/index.tsx` uses the role to redirect:
 ```
 Not logged in  →  /(auth)/login
 client         →  /client/dashboard
-admin/trainer  →  /admin/dashboard
+admin          →  /admin/dashboard
 ```
 
 ### Token Storage Strategy
@@ -230,7 +229,7 @@ The following tables are defined in the TypeScript types and mirror the Supabase
 ### User Roles (Enum)
 
 ```
-admin | trainer | client
+admin | client
 ```
 
 ### Equipment Status (Enum)
@@ -447,7 +446,7 @@ index.tsx (Splash)
     │                              ├── Notifications
     │                              └── Profile
     │
-    └── role: admin/trainer ───► /admin/dashboard
+    └── role: admin ───────────► /admin/dashboard
                                    ├── Equipment Manage
                                    ├── Reservations Manage
                                    └── Users

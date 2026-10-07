@@ -117,7 +117,10 @@ export default function MembershipsScreen() {
       }
 
       if (clientsRes.data) {
-        setClients(clientsRes.data as Profile[]);
+        const clientOnly = (clientsRes.data as Profile[]).filter(
+          (c) => c.role === "client" && !c.email?.toLowerCase().includes("admin")
+        );
+        setClients(clientOnly);
       }
     } catch (err: any) {
       console.error("Error fetching memberships data:", err);
@@ -367,16 +370,22 @@ export default function MembershipsScreen() {
     setReceiptModalVisible(true);
   };
 
-  // Clients available for enrollment (excluding ones with active memberships)
+  // Currently selected client object
+  const selectedClient = useMemo(() => {
+    return clients.find((c) => c.id === selectedClientId) || null;
+  }, [clients, selectedClientId]);
+
+  // Clients available for enrollment
   const availableClients = useMemo(() => {
-    const activeClientIds = new Set(activeMemberships.map((m) => m.client_id));
     return clients.filter((c) => {
-      const name = `${c.first_name || ""} ${c.last_name || ""} ${c.email || ""}`.toLowerCase();
-      const matchesSearch = name.includes(clientSearchText.toLowerCase());
-      // Show matching clients
-      return matchesSearch;
+      if (c.role !== "client") return false;
+      if (c.email?.toLowerCase().includes("admin")) return false;
+      const q = clientSearchText.toLowerCase().trim();
+      if (!q) return true;
+      const name = `${c.first_name || ""} ${c.last_name || ""} ${c.email || ""} ${c.phone_number || ""}`.toLowerCase();
+      return name.includes(q);
     });
-  }, [clients, activeMemberships, clientSearchText]);
+  }, [clients, clientSearchText]);
 
   // Filtered lists according to current search query
   const filteredActive = useMemo(() => {
@@ -779,33 +788,78 @@ export default function MembershipsScreen() {
             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 520 }}>
               {/* Step 1: Client Selection */}
               <Text style={styles.formSectionLabel}>1. SELECT GYM MEMBER</Text>
-              <Input
-                placeholder="Filter members by name or email..."
-                value={clientSearchText}
-                onChangeText={setClientSearchText}
-                containerStyle={{ marginBottom: Spacing.sm }}
-              />
+              {selectedClient ? (
+                <View style={styles.selectedMemberCard}>
+                  <View style={styles.selectedMemberAvatar}>
+                    <Text style={styles.selectedMemberAvatarText}>
+                      {(selectedClient.first_name?.[0] || "M").toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1, marginRight: Spacing.sm }}>
+                    <Text style={styles.selectedMemberTag}>SELECTED MEMBER</Text>
+                    <Text style={styles.selectedMemberName}>
+                      {selectedClient.first_name} {selectedClient.last_name}
+                    </Text>
+                    <Text style={styles.selectedMemberEmail}>
+                      {selectedClient.email || selectedClient.phone_number || "No contact info"}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.changeMemberButton}
+                    onPress={() => setSelectedClientId("")}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.changeMemberText}>Change</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.clientSelectionSection}>
+                  <Input
+                    placeholder="Filter members by name or email..."
+                    value={clientSearchText}
+                    onChangeText={setClientSearchText}
+                    containerStyle={{ marginBottom: Spacing.xs }}
+                  />
 
-              <View style={styles.clientPickerContainer}>
-                {availableClients.slice(0, 5).map((c) => {
-                  const isSelected = selectedClientId === c.id;
-                  return (
-                    <TouchableOpacity
-                      key={c.id}
-                      style={[styles.clientChoice, isSelected && styles.clientChoiceSelected]}
-                      onPress={() => setSelectedClientId(c.id)}
-                    >
-                      <Text style={[styles.clientChoiceName, isSelected && styles.clientChoiceNameSelected]}>
-                        {c.first_name} {c.last_name}
-                      </Text>
-                      <Text style={styles.clientChoiceEmail}>{c.email || c.phone_number || "No email"}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-                {availableClients.length === 0 && (
-                  <Text style={styles.noClientsNote}>No matching members found.</Text>
-                )}
-              </View>
+                  <ScrollView
+                    nestedScrollEnabled
+                    style={styles.clientPickerScroll}
+                    contentContainerStyle={styles.clientPickerContent}
+                    showsVerticalScrollIndicator={true}
+                  >
+                    {availableClients.map((c) => {
+                      const isSelected = selectedClientId === c.id;
+                      return (
+                        <TouchableOpacity
+                          key={c.id}
+                          style={[styles.clientChoice, isSelected && styles.clientChoiceSelected]}
+                          onPress={() => setSelectedClientId(c.id)}
+                          activeOpacity={0.7}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.clientChoiceName, isSelected && styles.clientChoiceNameSelected]}>
+                              {c.first_name} {c.last_name}
+                            </Text>
+                            <Text style={styles.clientChoiceEmail}>
+                              {c.email || c.phone_number || "No contact info"}
+                            </Text>
+                          </View>
+                          <View style={styles.selectMemberChip}>
+                            <Text style={styles.selectMemberChipText}>Select</Text>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                    {availableClients.length === 0 && (
+                      <View style={styles.noClientsBox}>
+                        <Text style={styles.noClientsNote}>
+                          {clientSearchText.trim() ? "No members match your search." : "No gym members available."}
+                        </Text>
+                      </View>
+                    )}
+                  </ScrollView>
+                </View>
+              )}
 
               {/* Step 2: Plan Selection */}
               <Text style={[styles.formSectionLabel, { marginTop: Spacing.lg }]}>2. MEMBERSHIP PLAN</Text>
@@ -1200,11 +1254,13 @@ const styles = StyleSheet.create({
   modalDialog: {
     width: "100%",
     maxWidth: 520,
+    maxHeight: "92%",
     backgroundColor: "rgba(20, 20, 24, 0.98)",
     borderRadius: Radius.xl,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.14)",
     padding: Spacing.xl,
+    overflow: "hidden",
   },
   modalHeader: {
     flexDirection: "row",
@@ -1238,24 +1294,35 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: Spacing.sm,
   },
-  clientPickerContainer: {
-    maxHeight: 140,
+  clientSelectionSection: {
+    marginBottom: Spacing.xs,
+  },
+  clientPickerScroll: {
+    maxHeight: 150,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.08)",
     borderRadius: Radius.md,
-    backgroundColor: "rgba(0, 0, 0, 0.2)",
-    padding: 4,
+    backgroundColor: "rgba(0, 0, 0, 0.25)",
+    overflow: "hidden",
+  },
+  clientPickerContent: {
+    padding: 6,
   },
   clientChoice: {
-    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 9,
     paddingHorizontal: Spacing.md,
     borderRadius: Radius.sm,
-    marginBottom: 2,
+    marginBottom: 4,
+    backgroundColor: "rgba(255, 255, 255, 0.02)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.04)",
   },
   clientChoiceSelected: {
-    backgroundColor: "rgba(251, 191, 36, 0.2)",
+    backgroundColor: "rgba(251, 191, 36, 0.16)",
     borderColor: Colors.primary,
-    borderWidth: 1,
   },
   clientChoiceName: {
     fontSize: 13,
@@ -1269,12 +1336,86 @@ const styles = StyleSheet.create({
   clientChoiceEmail: {
     fontSize: 11,
     color: Colors.light.textSecondary,
+    marginTop: 1,
+  },
+  selectMemberChip: {
+    backgroundColor: "rgba(251, 191, 36, 0.15)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: "rgba(251, 191, 36, 0.3)",
+  },
+  selectMemberChipText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.primary,
+  },
+  selectedMemberCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(251, 191, 36, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(251, 191, 36, 0.35)",
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.xs,
+  },
+  selectedMemberAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(251, 191, 36, 0.2)",
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: Spacing.md,
+  },
+  selectedMemberAvatarText: {
+    color: Colors.primary,
+    fontWeight: "700",
+    fontSize: 15,
+  },
+  selectedMemberTag: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: Colors.primary,
+    letterSpacing: 1,
+    marginBottom: 2,
+  },
+  selectedMemberName: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: Colors.light.text,
+  },
+  selectedMemberEmail: {
+    fontSize: 11,
+    color: Colors.light.textSecondary,
+    marginTop: 1,
+  },
+  changeMemberButton: {
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+  },
+  changeMemberText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.light.textSecondary,
+  },
+  noClientsBox: {
+    padding: Spacing.lg,
+    alignItems: "center",
+    justifyContent: "center",
   },
   noClientsNote: {
     fontSize: 12,
     color: Colors.light.textSecondary,
     textAlign: "center",
-    padding: Spacing.md,
   },
   planChoicesGrid: {
     flexDirection: "row",

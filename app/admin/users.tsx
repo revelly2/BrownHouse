@@ -112,8 +112,6 @@ export default function UsersScreen() {
     switch (role) {
       case "admin":
         return "error" as const;
-      case "trainer":
-        return "warning" as const;
       default:
         return "info" as const;
     }
@@ -123,8 +121,6 @@ export default function UsersScreen() {
     switch (role) {
       case "admin":
         return Colors.error;
-      case "trainer":
-        return Colors.warning;
       default:
         return Colors.info;
     }
@@ -237,7 +233,7 @@ export default function UsersScreen() {
             </Text>
 
             <View style={styles.modalOptions}>
-              {["admin", "trainer", "client"].map((roleOption) => (
+              {["admin", "client"].map((roleOption) => (
                 <TouchableOpacity
                   key={roleOption}
                   style={[

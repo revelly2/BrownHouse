@@ -88,13 +88,13 @@ export function getReservationState(reservation: Reservation, currentTime: Date 
   const isEnded = nowMs >= endMs;
   const isCheckedIn = Boolean(metadata.checked_in);
 
-  // Active means: confirmed, user checked in by cashier, and within session window
+  // Active means: confirmed, user checked in by staff, and within session window
   const isActive = reservation.status === "confirmed" && isCheckedIn && isStarted;
 
   // Awaiting check-in: confirmed, not yet checked in, and session hasn't ended
   const isAwaitingCheckIn = reservation.status === "confirmed" && !isCheckedIn && !isEnded;
 
-  // Missed check-in / absent: start time reached or passed, but user never checked in at cashier
+  // Missed check-in / absent: start time reached or passed, but user never checked in at front desk
   const isMissedCheckIn = reservation.status === "confirmed" && !isCheckedIn && nowMs >= startMs;
 
   // Timing flags:
