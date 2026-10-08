@@ -64,18 +64,31 @@ export default function EquipmentScreen() {
     available?: boolean;
     reason?: string;
   } | null>(null);
-  const [selectedDateMode, setSelectedDateMode] = useState<"today" | "tomorrow">("today");
+  const dateOptions = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() + i);
+    const dateStr = getLocalDateString(d);
+    const label =
+      i === 0
+        ? "Today"
+        : i === 1
+        ? "Tomorrow"
+        : d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    return { dateStr, label, isToday: i === 0 };
+  });
+
+  const [selectedDateStr, setSelectedDateStr] = useState<string>(getLocalDateString(new Date()));
   const [bookingLoading, setBookingLoading] = useState(false);
 
   const selectedEquipmentRef = useRef<EquipmentWithLiveStatus | null>(null);
-  const selectedDateModeRef = useRef<"today" | "tomorrow">("today");
+  const selectedDateStrRef = useRef<string>(getLocalDateString(new Date()));
   const slotModalVisibleRef = useRef<boolean>(false);
 
   useEffect(() => {
     selectedEquipmentRef.current = selectedEquipment;
-    selectedDateModeRef.current = selectedDateMode;
+    selectedDateStrRef.current = selectedDateStr;
     slotModalVisibleRef.current = slotModalVisible;
-  }, [selectedEquipment, selectedDateMode, slotModalVisible]);
+  }, [selectedEquipment, selectedDateStr, slotModalVisible]);
 
   const showAlert = (title: string, message: string, actions?: GlassAlertAction[]) => {
     setAlertConfig({ title, message, actions });
@@ -84,7 +97,7 @@ export default function EquipmentScreen() {
 
   const refreshModalSlotsIfOpen = async () => {
     if (slotModalVisibleRef.current && selectedEquipmentRef.current) {
-      await loadSlotsForDate(selectedEquipmentRef.current, selectedDateModeRef.current);
+      await loadSlotsForDate(selectedEquipmentRef.current, selectedDateStrRef.current);
     }
   };
 
@@ -217,13 +230,8 @@ export default function EquipmentScreen() {
     setRefreshing(false);
   };
 
-  const loadSlotsForDate = async (item: EquipmentWithLiveStatus, mode: "today" | "tomorrow") => {
-    const targetDate = new Date();
-    if (mode === "tomorrow") {
-      targetDate.setDate(targetDate.getDate() + 1);
-    }
-    const targetDateStr = getLocalDateString(targetDate);
-    const isToday = mode === "today";
+  const loadSlotsForDate = async (item: EquipmentWithLiveStatus, targetDateStr: string) => {
+    const isToday = targetDateStr === getLocalDateString(new Date());
 
     const slots: {
       start: string;
@@ -235,10 +243,13 @@ export default function EquipmentScreen() {
     const currentHour = now.getHours();
     const currentMin = now.getMinutes();
 
-    // Standard hourly slots from 06:30 to 23:30 (covers morning to late night)
-    for (let i = 6; i <= 23; i++) {
+    // Standard 1-hour slots every 30 mins from 06:00 to 22:30 (allows reserving any future hour!)
+    for (let i = 6; i <= 22; i++) {
       const h = String(i).padStart(2, "0");
-      const nextH = String((i + 1) % 24).padStart(2, "0");
+      const nextH = String(i + 1).padStart(2, "0");
+      // On the hour: e.g. 07:00 - 08:00
+      slots.push({ start: `${h}:00`, end: `${nextH}:00`, available: true });
+      // On the half hour: e.g. 07:30 - 08:30
       slots.push({ start: `${h}:30`, end: `${nextH}:30`, available: true });
     }
 
@@ -285,18 +296,19 @@ export default function EquipmentScreen() {
       return;
     }
 
+    const todayStr = getLocalDateString(new Date());
     setSelectedEquipment(item);
     setSelectedSlot(null);
-    setSelectedDateMode("today");
+    setSelectedDateStr(todayStr);
     setSlotModalVisible(true);
-    await loadSlotsForDate(item, "today");
+    await loadSlotsForDate(item, todayStr);
   };
 
-  const handleDateModeChange = async (mode: "today" | "tomorrow") => {
-    setSelectedDateMode(mode);
+  const handleDateChange = async (dateStr: string) => {
+    setSelectedDateStr(dateStr);
     setSelectedSlot(null);
     if (selectedEquipment) {
-      await loadSlotsForDate(selectedEquipment, mode);
+      await loadSlotsForDate(selectedEquipment, dateStr);
     }
   };
 
@@ -313,11 +325,7 @@ export default function EquipmentScreen() {
 
     setBookingLoading(true);
 
-    const targetDate = new Date();
-    if (selectedDateMode === "tomorrow") {
-      targetDate.setDate(targetDate.getDate() + 1);
-    }
-    const bookingDateStr = getLocalDateString(targetDate);
+    const bookingDateStr = selectedDateStr;
 
     // Double check conflict directly in database right before inserting
     const { data: existingBookings } = await supabase
@@ -338,7 +346,7 @@ export default function EquipmentScreen() {
           "Slot Already Reserved",
           `This equipment is already reserved or in use from ${conflict.start_time.slice(0, 5)} to ${conflict.end_time.slice(0, 5)}. Please choose another time slot.`
         );
-        await loadSlotsForDate(selectedEquipment, selectedDateMode);
+        await loadSlotsForDate(selectedEquipment, selectedDateStr);
         return;
       }
     }
@@ -380,7 +388,7 @@ export default function EquipmentScreen() {
 
       showAlert(
         "Reservation Confirmed",
-        "Your equipment reservation is confirmed! It will automatically activate when your scheduled time begins.",
+        `Your reservation for ${selectedEquipment.name} on ${bookingDateStr} (${selectedSlot.start} - ${selectedSlot.end}) is confirmed!`,
         [
           { text: "View Bookings", onPress: () => router.push("/client/reservations") },
           { text: "OK", style: "cancel" },
@@ -489,41 +497,35 @@ export default function EquipmentScreen() {
               Book {selectedEquipment?.name}
             </Text>
 
-            {/* Date Switcher */}
-            <View style={styles.dateSwitchContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.dateSwitchBtn,
-                  selectedDateMode === "today" && styles.dateSwitchBtnActive,
-                ]}
-                onPress={() => handleDateModeChange("today")}
-              >
-                <Text
-                  style={[
-                    styles.dateSwitchText,
-                    selectedDateMode === "today" && styles.dateSwitchTextActive,
-                  ]}
-                >
-                  Today
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.dateSwitchBtn,
-                  selectedDateMode === "tomorrow" && styles.dateSwitchBtnActive,
-                ]}
-                onPress={() => handleDateModeChange("tomorrow")}
-              >
-                <Text
-                  style={[
-                    styles.dateSwitchText,
-                    selectedDateMode === "tomorrow" && styles.dateSwitchTextActive,
-                  ]}
-                >
-                  Tomorrow
-                </Text>
-              </TouchableOpacity>
-            </View>
+            {/* 7-Day Date Selector */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.dateSwitchContainer}
+            >
+              {dateOptions.map((opt) => {
+                const isActive = selectedDateStr === opt.dateStr;
+                return (
+                  <TouchableOpacity
+                    key={opt.dateStr}
+                    style={[
+                      styles.dateSwitchBtn,
+                      isActive && styles.dateSwitchBtnActive,
+                    ]}
+                    onPress={() => handleDateChange(opt.dateStr)}
+                  >
+                    <Text
+                      style={[
+                        styles.dateSwitchText,
+                        isActive && styles.dateSwitchTextActive,
+                      ]}
+                    >
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
 
             {Boolean(selectedEquipment?.status === "occupied" || selectedEquipment?._activeUntil) && (
               <View style={styles.inUseNotice}>
@@ -763,10 +765,11 @@ const styles = StyleSheet.create({
   dateSwitchContainer: {
     flexDirection: "row",
     gap: 8,
+    paddingBottom: Spacing.xs,
     marginBottom: Spacing.md,
   },
   dateSwitchBtn: {
-    flex: 1,
+    paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: Radius.md,
     backgroundColor: "rgba(255, 255, 255, 0.05)",

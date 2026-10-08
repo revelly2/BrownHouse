@@ -123,7 +123,7 @@ export function EquipmentCard({
                 : styles.reserveBtnTextDisabled,
             ]}
           >
-            {isMaintenance ? "Unavailable" : isOccupied ? "Reserve Later" : "Reserve"}
+            {isMaintenance ? "Unavailable" : isOccupied ? "Book Future Slot" : "Reserve"}
           </Text>
         </TouchableOpacity>
       </View>
