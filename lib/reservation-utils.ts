@@ -142,6 +142,32 @@ export function getReservationState(reservation: Reservation, currentTime: Date 
 }
 
 /**
+ * Converts a "HH:MM" or "HH:MM:SS" time string into total minutes from midnight.
+ */
+export function timeStringToMinutes(timeStr: string): number {
+  if (!timeStr) return 0;
+  const [h, m] = timeStr.split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+/**
+ * Checks whether two time intervals [startA, endA) and [startB, endB) overlap.
+ * Returns true if there is an intersection between the two intervals.
+ */
+export function doTimeIntervalsOverlap(
+  startA: string,
+  endA: string,
+  startB: string,
+  endB: string
+): boolean {
+  const sA = timeStringToMinutes(startA);
+  const eA = timeStringToMinutes(endA);
+  const sB = timeStringToMinutes(startB);
+  const eB = timeStringToMinutes(endB);
+  return sA < eB && eA > sB;
+}
+
+/**
  * Sends in-app notification to the client and triggers Realtime listener Toast
  */
 export async function sendReservationNotification(
@@ -165,3 +191,4 @@ export async function sendReservationNotification(
     console.warn("Error sending reservation notification:", e);
   }
 }
+

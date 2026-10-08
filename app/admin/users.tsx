@@ -37,7 +37,30 @@ export default function UsersScreen() {
       .select("*")
       .order("joined_date", { ascending: false });
 
-    if (data) setUsers(data as Profile[]);
+    if (data) {
+      const normalized = (data as any[]).map((u) => ({
+        ...u,
+        role: (u.role === "admin" ? "admin" : "client") as "admin" | "client",
+      })) as Profile[];
+      setUsers(normalized);
+
+      // Auto-migrate legacy roles (like cashier/trainer) in the database to client
+      const legacyIds = (data as any[])
+        .filter((u) => u.role !== "admin" && u.role !== "client")
+        .map((u) => u.id);
+
+      if (legacyIds.length > 0) {
+        supabase
+          .from("profiles")
+          .update({ role: "client" })
+          .in("id", legacyIds)
+          .then(({ error: updateErr }) => {
+            if (updateErr) {
+              console.warn("Could not auto-migrate legacy roles:", updateErr.message);
+            }
+          });
+      }
+    }
     setLoading(false);
   };
 
@@ -51,11 +74,21 @@ export default function UsersScreen() {
         { event: "*", schema: "public", table: "profiles" },
         (payload) => {
           if (payload.eventType === "UPDATE") {
+            const raw = payload.new as any;
+            const updatedProfile: Profile = {
+              ...raw,
+              role: raw.role === "admin" ? "admin" : "client",
+            };
             setUsers((prev) =>
-              prev.map((u) => (u.id === payload.new.id ? { ...u, ...payload.new } as Profile : u))
+              prev.map((u) => (u.id === payload.new.id ? updatedProfile : u))
             );
           } else if (payload.eventType === "INSERT") {
-            setUsers((prev) => [payload.new as Profile, ...prev]);
+            const raw = payload.new as any;
+            const newProfile: Profile = {
+              ...raw,
+              role: raw.role === "admin" ? "admin" : "client",
+            };
+            setUsers((prev) => [newProfile, ...prev]);
           } else if (payload.eventType === "DELETE") {
             setUsers((prev) => prev.filter((u) => u.id !== payload.old.id));
           }
@@ -126,56 +159,59 @@ export default function UsersScreen() {
     }
   };
 
-  const renderItem = ({ item }: { item: Profile }) => (
-    <TouchableOpacity activeOpacity={0.8} onPress={() => setSelectedUser(item)}>
-      <Card variant="glass" style={styles.card}>
-      <View style={styles.cardRow}>
-        <View
-          style={[
-            styles.avatar,
-            { borderColor: getRoleAccent(item.role) },
-          ]}
-        >
-          {item.profile_picture_url ? (
-            <Image 
-              source={{ uri: item.profile_picture_url }} 
-              style={{ width: '100%', height: '100%', borderRadius: 12 }} 
-              resizeMode="cover" 
-            />
-          ) : (
-            <Text
-              style={[
-                styles.avatarText,
-                { color: getRoleAccent(item.role) },
-              ]}
-            >
-              {(item.first_name?.[0] ?? "U").toUpperCase()}
+  const renderItem = ({ item }: { item: Profile }) => {
+    const role = item.role === "admin" ? "admin" : "client";
+    return (
+      <TouchableOpacity activeOpacity={0.8} onPress={() => setSelectedUser({ ...item, role })}>
+        <Card variant="glass" style={styles.card}>
+        <View style={styles.cardRow}>
+          <View
+            style={[
+              styles.avatar,
+              { borderColor: getRoleAccent(role) },
+            ]}
+          >
+            {item.profile_picture_url ? (
+              <Image 
+                source={{ uri: item.profile_picture_url }} 
+                style={{ width: '100%', height: '100%', borderRadius: 12 }} 
+                resizeMode="cover" 
+              />
+            ) : (
+              <Text
+                style={[
+                  styles.avatarText,
+                  { color: getRoleAccent(role) },
+                ]}
+              >
+                {(item.first_name?.[0] ?? "U").toUpperCase()}
+              </Text>
+            )}
+          </View>
+          <View style={styles.cardInfo}>
+            <Text style={styles.userName}>
+              {item.first_name ?? ""} {item.last_name ?? ""}
             </Text>
-          )}
+            {item.email && (
+              <Text style={[styles.userMeta, { marginBottom: 2, color: Colors.textSecondary }]}>
+                {item.email}
+              </Text>
+            )}
+            <Text style={styles.userMeta}>
+              Joined {new Date(item.joined_date).toLocaleDateString()}
+            </Text>
+            {item.fitness_goal && (
+              <Text style={styles.userGoal} numberOfLines={1}>
+                Goal: {item.fitness_goal}
+              </Text>
+            )}
+          </View>
+          <Badge label={role} variant={getRoleVariant(role)} size="sm" />
         </View>
-        <View style={styles.cardInfo}>
-          <Text style={styles.userName}>
-            {item.first_name ?? ""} {item.last_name ?? ""}
-          </Text>
-          {item.email && (
-            <Text style={[styles.userMeta, { marginBottom: 2, color: Colors.textSecondary }]}>
-              {item.email}
-            </Text>
-          )}
-          <Text style={styles.userMeta}>
-            Joined {new Date(item.joined_date).toLocaleDateString()}
-          </Text>
-          {item.fitness_goal && (
-            <Text style={styles.userGoal} numberOfLines={1}>
-              Goal: {item.fitness_goal}
-            </Text>
-          )}
-        </View>
-        <Badge label={item.role} variant={getRoleVariant(item.role)} size="sm" />
-      </View>
-    </Card>
-    </TouchableOpacity>
-  );
+      </Card>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>

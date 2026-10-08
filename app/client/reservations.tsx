@@ -90,8 +90,14 @@ export default function ReservationsScreen() {
       )
       .subscribe();
 
+    // Fast 3-second fallback interval so status updates reflect in real time
+    const interval = setInterval(() => {
+      fetchReservations();
+    }, 3000);
+
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(interval);
     };
   }, [profile]);
 
@@ -170,13 +176,17 @@ export default function ReservationsScreen() {
   };
 
   const handleCancel = async (reservation: ReservationWithEquipment) => {
+    const timing = getReservationState(reservation, currentTime);
+    const isSessionActive = timing.isActive;
+
     const doCancel = async () => {
+      const reason = isSessionActive ? "Cancelled early by user" : "Cancelled by user";
       const { error } = await supabase
         .from("reservations")
         .update({
           status: "cancelled",
           notes: serializeReservationMetadata(
-            { cancel_reason: "Cancelled by user" },
+            { cancel_reason: reason },
             reservation.notes
           ),
         })
@@ -184,15 +194,25 @@ export default function ReservationsScreen() {
 
       if (error) {
         showAlert("Error", error.message);
+      } else {
+        await fetchReservations();
+        showAlert(
+          "Reservation Cancelled",
+          isSessionActive
+            ? "Your active session has been cancelled and the equipment is now released."
+            : "Your equipment reservation has been cancelled."
+        );
       }
     };
 
     showAlert(
-      "Cancel Reservation",
-      "Are you sure you want to cancel this equipment reservation?",
+      isSessionActive ? "Cancel Active Session" : "Cancel Reservation",
+      isSessionActive
+        ? "Are you sure you want to cancel and end this active workout session? The equipment will immediately become available for other members."
+        : "Are you sure you want to cancel this equipment reservation?",
       [
-        { text: "No", style: "cancel" },
-        { text: "Yes, Cancel", style: "destructive", onPress: doCancel },
+        { text: isSessionActive ? "Keep Session" : "No", style: "cancel" },
+        { text: isSessionActive ? "Yes, Cancel Session" : "Yes, Cancel", style: "destructive", onPress: doCancel },
       ]
     );
   };
@@ -202,8 +222,8 @@ export default function ReservationsScreen() {
     const equipmentName = item.equipment?.name ?? "Equipment";
     const equipmentType = item.equipment?.type === "cardio" ? "Cardio" : "Strength";
 
-    // User can cancel if the start time is still in the future and reservation is confirmed
-    const canCancel = item.status === "confirmed" && !timing.isStarted && !timing.isEnded;
+    // User can cancel if the reservation is confirmed and not ended (supports active sessions too!)
+    const canCancel = item.status === "confirmed" && !timing.isEnded;
 
     return (
       <Card
@@ -372,15 +392,28 @@ export default function ReservationsScreen() {
           </View>
         )}
 
-        {/* Cancel Action Button (only if before start time) */}
+        {/* Cancel Action Button (available for both upcoming and active sessions) */}
         {canCancel && (
           <View style={styles.cardActions}>
             <TouchableOpacity
-              style={styles.cancelBtn}
+              style={[
+                styles.cancelBtn,
+                timing.isActive && {
+                  borderColor: "rgba(239, 68, 68, 0.4)",
+                  backgroundColor: "rgba(239, 68, 68, 0.1)",
+                },
+              ]}
               onPress={() => handleCancel(item)}
               activeOpacity={0.7}
             >
-              <Text style={styles.cancelBtnText}>Cancel Booking</Text>
+              <Text
+                style={[
+                  styles.cancelBtnText,
+                  timing.isActive && { color: "#EF4444", fontWeight: "700" },
+                ]}
+              >
+                {timing.isActive ? "End / Cancel Session" : "Cancel Booking"}
+              </Text>
             </TouchableOpacity>
           </View>
         )}

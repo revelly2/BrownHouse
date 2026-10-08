@@ -119,7 +119,7 @@ export default function ReservationsManageScreen() {
 
     const pollInterval = setInterval(() => {
       fetchReservations();
-    }, 5000);
+    }, 2500);
 
     return () => {
       supabase.removeChannel(channel);

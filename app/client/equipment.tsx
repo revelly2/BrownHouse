@@ -2,7 +2,7 @@
 // Client Equipment Screen — Swiss Glassmorphic Browse
 // ============================================================================
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -24,14 +24,23 @@ import { Colors, Spacing, Typography, Radius } from "../../constants/colors";
 import { GlassAlert, GlassAlertAction } from "../../components/ui/GlassAlert";
 import { scheduleReservationNotifications } from "../../lib/notifications";
 import { getLocalDateString } from "../../lib/utils";
-import { serializeReservationMetadata } from "../../lib/reservation-utils";
+import {
+  serializeReservationMetadata,
+  getReservationState,
+  doTimeIntervalsOverlap,
+  timeStringToMinutes,
+} from "../../lib/reservation-utils";
 
 type FilterType = "all" | "cardio" | "strength";
 
+interface EquipmentWithLiveStatus extends Equipment {
+  _activeUntil?: string | null;
+}
+
 export default function EquipmentScreen() {
   const { profile } = useAuth();
-  const [equipment, setEquipment] = useState<Equipment[]>([]);
-  const [filtered, setFiltered] = useState<Equipment[]>([]);
+  const [equipment, setEquipment] = useState<EquipmentWithLiveStatus[]>([]);
+  const [filtered, setFiltered] = useState<EquipmentWithLiveStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
@@ -45,26 +54,100 @@ export default function EquipmentScreen() {
   }>({ title: "", message: "" });
 
   const [slotModalVisible, setSlotModalVisible] = useState(false);
-  const [selectedEquipment, setSelectedEquipment] = useState<Equipment | null>(null);
-  const [availableSlots, setAvailableSlots] = useState<{start: string, end: string, available: boolean, isTestSlot?: boolean}[]>([]);
-  const [selectedSlot, setSelectedSlot] = useState<{start: string, end: string, isTestSlot?: boolean} | null>(null);
+  const [selectedEquipment, setSelectedEquipment] = useState<EquipmentWithLiveStatus | null>(null);
+  const [availableSlots, setAvailableSlots] = useState<
+    { start: string; end: string; available: boolean; reason?: string }[]
+  >([]);
+  const [selectedSlot, setSelectedSlot] = useState<{
+    start: string;
+    end: string;
+    available?: boolean;
+    reason?: string;
+  } | null>(null);
   const [selectedDateMode, setSelectedDateMode] = useState<"today" | "tomorrow">("today");
   const [bookingLoading, setBookingLoading] = useState(false);
+
+  const selectedEquipmentRef = useRef<EquipmentWithLiveStatus | null>(null);
+  const selectedDateModeRef = useRef<"today" | "tomorrow">("today");
+  const slotModalVisibleRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    selectedEquipmentRef.current = selectedEquipment;
+    selectedDateModeRef.current = selectedDateMode;
+    slotModalVisibleRef.current = slotModalVisible;
+  }, [selectedEquipment, selectedDateMode, slotModalVisible]);
 
   const showAlert = (title: string, message: string, actions?: GlassAlertAction[]) => {
     setAlertConfig({ title, message, actions });
     setAlertVisible(true);
   };
 
-  const fetchEquipment = async () => {
-    const { data, error } = await supabase
-      .from("equipment")
-      .select("*")
-      .order("name");
+  const refreshModalSlotsIfOpen = async () => {
+    if (slotModalVisibleRef.current && selectedEquipmentRef.current) {
+      await loadSlotsForDate(selectedEquipmentRef.current, selectedDateModeRef.current);
+    }
+  };
 
-    if (data) {
-      setEquipment(data as Equipment[]);
-      setFiltered(data as Equipment[]);
+  const fetchEquipment = async () => {
+    const todayStr = getLocalDateString(new Date());
+
+    const [equipRes, reservationsRes] = await Promise.all([
+      supabase.from("equipment").select("*").order("name"),
+      supabase
+        .from("reservations")
+        .select("id, equipment_id, start_time, end_time, reservation_date, status, notes")
+        .eq("reservation_date", todayStr)
+        .eq("status", "confirmed"),
+    ]);
+
+    if (equipRes.data) {
+      const now = new Date();
+      const confirmedToday = (reservationsRes.data || []) as any[];
+
+      const computedEquipment: EquipmentWithLiveStatus[] = (equipRes.data as Equipment[]).map((item) => {
+        if (item.status === "maintenance") {
+          return item;
+        }
+
+        // Check if there is an active reservation right now for this equipment
+        const activeRes = confirmedToday.find((res) => {
+          if (res.equipment_id !== item.id) return false;
+          const timing = getReservationState(res, now);
+          return timing.isActive;
+        });
+
+        if (activeRes) {
+          const endStr = activeRes.end_time?.slice(0, 5) || "";
+          const [eh, em] = endStr.split(":").map(Number);
+          const suffix = eh >= 12 ? "PM" : "AM";
+          const h12 = eh % 12 || 12;
+          const formattedEnd = `${h12}:${String(em).padStart(2, "0")} ${suffix}`;
+
+          return {
+            ...item,
+            status: "occupied",
+            _activeUntil: formattedEnd,
+          };
+        }
+
+        // If the equipment was set to occupied in the equipment table, preserve occupied state
+        if (item.status === "occupied") {
+          return {
+            ...item,
+            status: "occupied",
+            _activeUntil: null,
+          };
+        }
+
+        return {
+          ...item,
+          status: "available",
+          _activeUntil: null,
+        };
+      });
+
+      setEquipment(computedEquipment);
+      setFiltered(computedEquipment);
     }
     setLoading(false);
   };
@@ -72,17 +155,39 @@ export default function EquipmentScreen() {
   useEffect(() => {
     fetchEquipment();
 
-    const channel = supabase
-      .channel("client-equipment")
+    const onDataChanged = async () => {
+      await fetchEquipment();
+      await refreshModalSlotsIfOpen();
+    };
+
+    const equipChannel = supabase
+      .channel("client-equipment-changes")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "equipment" },
-        () => fetchEquipment()
+        onDataChanged
       )
       .subscribe();
 
+    const resChannel = supabase
+      .channel("client-reservations-equipment-sync")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "reservations" },
+        onDataChanged
+      )
+      .subscribe();
+
+    // Fast 2.5-second polling interval ensures real-time sync with zero manual refresh needed
+    const interval = setInterval(() => {
+      fetchEquipment();
+      refreshModalSlotsIfOpen();
+    }, 2500);
+
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(equipChannel);
+      supabase.removeChannel(resChannel);
+      clearInterval(interval);
     };
   }, []);
 
@@ -112,7 +217,7 @@ export default function EquipmentScreen() {
     setRefreshing(false);
   };
 
-  const loadSlotsForDate = async (item: Equipment, mode: "today" | "tomorrow") => {
+  const loadSlotsForDate = async (item: EquipmentWithLiveStatus, mode: "today" | "tomorrow") => {
     const targetDate = new Date();
     if (mode === "tomorrow") {
       targetDate.setDate(targetDate.getDate() + 1);
@@ -120,55 +225,53 @@ export default function EquipmentScreen() {
     const targetDateStr = getLocalDateString(targetDate);
     const isToday = mode === "today";
 
-    const slots: { start: string; end: string; available: boolean; isTestSlot?: boolean }[] = [];
+    const slots: {
+      start: string;
+      end: string;
+      available: boolean;
+      reason?: string;
+    }[] = [];
     const now = new Date();
     const currentHour = now.getHours();
     const currentMin = now.getMinutes();
 
-    // 1. If today, add an Immediate Test Slot right at the top so users can test live workflows anytime (even late at night!)
-    if (isToday) {
-      const pad = (n: number) => String(n).padStart(2, "0");
-      const startH = currentHour;
-      const startM = currentMin;
-      const endTotalM = currentMin + 15;
-      const endH = (currentHour + Math.floor(endTotalM / 60)) % 24;
-      const endM = endTotalM % 60;
-
-      slots.push({
-        start: `${pad(startH)}:${pad(startM)}`,
-        end: `${pad(endH)}:${pad(endM)}`,
-        available: true,
-        isTestSlot: true,
-      });
-    }
-
-    // 2. Full 1-hour slots from 06:30 to 23:30 (covers morning to late night!)
+    // Standard hourly slots from 06:30 to 23:30 (covers morning to late night)
     for (let i = 6; i <= 23; i++) {
       const h = String(i).padStart(2, "0");
       const nextH = String((i + 1) % 24).padStart(2, "0");
       slots.push({ start: `${h}:30`, end: `${nextH}:30`, available: true });
     }
 
+    // Fetch existing confirmed reservations for this equipment on this date
     const { data: res } = await supabase
       .from("reservations")
-      .select("start_time, status")
+      .select("id, client_id, equipment_id, start_time, end_time, status, reservation_date, notes")
       .eq("equipment_id", item.id)
       .eq("reservation_date", targetDateStr)
-      .in("status", ["confirmed", "completed"]);
+      .eq("status", "confirmed");
 
-    if (res) {
-      const bookedStartTimes = res.map((r) => r.start_time.substring(0, 5));
-      for (const slot of slots) {
-        if (!slot.isTestSlot && bookedStartTimes.includes(slot.start)) {
+    const bookedReservations = (res || []) as any[];
+
+    for (const slot of slots) {
+      // 1. Check interval overlap with ANY existing confirmed reservation
+      const overlappingBooking = bookedReservations.find((b) =>
+        doTimeIntervalsOverlap(slot.start, slot.end, b.start_time, b.end_time)
+      );
+
+      if (overlappingBooking) {
+        slot.available = false;
+        const bStart = overlappingBooking.start_time.slice(0, 5);
+        const bEnd = overlappingBooking.end_time.slice(0, 5);
+        slot.reason = `In Use / Reserved (${bStart} - ${bEnd})`;
+      }
+
+      // 2. Disable past slots if booking for today
+      if (isToday) {
+        const slotStartMin = timeStringToMinutes(slot.start);
+        const currentTotalMin = currentHour * 60 + currentMin;
+        if (slotStartMin <= currentTotalMin) {
           slot.available = false;
-        }
-
-        // Only disable past slots if booking for today
-        if (isToday && !slot.isTestSlot) {
-          const [sh, sm] = slot.start.split(":").map(Number);
-          if (sh < currentHour || (sh === currentHour && sm <= currentMin)) {
-            slot.available = false;
-          }
+          if (!slot.reason) slot.reason = "Past time";
         }
       }
     }
@@ -176,7 +279,7 @@ export default function EquipmentScreen() {
     setAvailableSlots(slots);
   };
 
-  const handleReserve = async (item: Equipment) => {
+  const handleReserve = async (item: EquipmentWithLiveStatus) => {
     if (!profile?.id) {
       showAlert("Notice", "You must be logged in to reserve equipment.");
       return;
@@ -200,6 +303,14 @@ export default function EquipmentScreen() {
   const confirmReservation = async () => {
     if (!profile?.id || !selectedEquipment || !selectedSlot) return;
 
+    if (!selectedSlot.available) {
+      showAlert(
+        "Slot Unavailable",
+        selectedSlot.reason || "The selected time slot is already booked or unavailable."
+      );
+      return;
+    }
+
     setBookingLoading(true);
 
     const targetDate = new Date();
@@ -207,6 +318,30 @@ export default function EquipmentScreen() {
       targetDate.setDate(targetDate.getDate() + 1);
     }
     const bookingDateStr = getLocalDateString(targetDate);
+
+    // Double check conflict directly in database right before inserting
+    const { data: existingBookings } = await supabase
+      .from("reservations")
+      .select("id, start_time, end_time")
+      .eq("equipment_id", selectedEquipment.id)
+      .eq("reservation_date", bookingDateStr)
+      .eq("status", "confirmed");
+
+    if (existingBookings) {
+      const conflict = existingBookings.find((b) =>
+        doTimeIntervalsOverlap(selectedSlot.start, selectedSlot.end, b.start_time, b.end_time)
+      );
+
+      if (conflict) {
+        setBookingLoading(false);
+        showAlert(
+          "Slot Already Reserved",
+          `This equipment is already reserved or in use from ${conflict.start_time.slice(0, 5)} to ${conflict.end_time.slice(0, 5)}. Please choose another time slot.`
+        );
+        await loadSlotsForDate(selectedEquipment, selectedDateMode);
+        return;
+      }
+    }
 
     const initialNotes = serializeReservationMetadata({
       checked_in: false,
@@ -231,6 +366,7 @@ export default function EquipmentScreen() {
       showAlert("Error", error.message);
     } else {
       setSlotModalVisible(false);
+      await fetchEquipment();
       
       const startDateTime = new Date();
       const [sh, sm] = selectedSlot.start.split(':').map(Number);
@@ -311,6 +447,7 @@ export default function EquipmentScreen() {
         renderItem={({ item }) => (
           <EquipmentCard
             equipment={item}
+            activeSessionUntil={item._activeUntil}
             onReserve={handleReserve}
           />
         )}
@@ -388,6 +525,14 @@ export default function EquipmentScreen() {
               </TouchableOpacity>
             </View>
 
+            {Boolean(selectedEquipment?.status === "occupied" || selectedEquipment?._activeUntil) && (
+              <View style={styles.inUseNotice}>
+                <Text style={styles.inUseNoticeText}>
+                  ⚠️ Currently in use{selectedEquipment?._activeUntil ? ` until ${selectedEquipment._activeUntil}` : ""}. Select an upcoming available slot below.
+                </Text>
+              </View>
+            )}
+
             <ScrollView style={styles.slotsContainer}>
               <View style={styles.slotsGrid}>
                 {availableSlots.map((slot, index) => {
@@ -398,46 +543,6 @@ export default function EquipmentScreen() {
                     const h12 = h % 12 || 12;
                     return `${h12}:${String(m).padStart(2, '0')} ${suffix}`;
                   };
-
-                  if (slot.isTestSlot) {
-                    return (
-                      <TouchableOpacity
-                        key={index}
-                        style={[
-                          styles.testSlotCard,
-                          isSelected && styles.testSlotCardSelected,
-                        ]}
-                        onPress={() => setSelectedSlot(slot)}
-                      >
-                        <View style={styles.testSlotHeader}>
-                          <Text
-                            style={[
-                              styles.testSlotTag,
-                              isSelected && { color: "#000" },
-                            ]}
-                          >
-                            ⚡ QUICK TEST (STARTS RIGHT NOW)
-                          </Text>
-                        </View>
-                        <Text
-                          style={[
-                            styles.testSlotTime,
-                            isSelected && { color: "#000" },
-                          ]}
-                        >
-                          {formatTime12Hour(slot.start)} — {formatTime12Hour(slot.end)} (15 mins)
-                        </Text>
-                        <Text
-                          style={[
-                            styles.testSlotHint,
-                            isSelected && { color: "rgba(0, 0, 0, 0.75)" },
-                          ]}
-                        >
-                          Test live active flow: Staff checks in → Becomes ACTIVE immediately!
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  }
 
                   return (
                     <TouchableOpacity
@@ -459,6 +564,9 @@ export default function EquipmentScreen() {
                       >
                         {formatTime12Hour(slot.start)} - {formatTime12Hour(slot.end)}
                       </Text>
+                      {!slot.available && slot.reason?.includes("In Use") && (
+                        <Text style={styles.slotBookedTag}>Occupied</Text>
+                      )}
                     </TouchableOpacity>
                   );
                 })}
@@ -678,37 +786,26 @@ const styles = StyleSheet.create({
   dateSwitchTextActive: {
     color: Colors.primary,
   },
-  testSlotCard: {
-    width: "100%",
-    padding: Spacing.md,
+  inUseNotice: {
+    backgroundColor: "rgba(255, 184, 77, 0.12)",
+    borderColor: "rgba(255, 184, 77, 0.3)",
+    borderWidth: 1,
     borderRadius: Radius.md,
-    backgroundColor: "rgba(251, 191, 36, 0.12)",
-    borderWidth: 1.5,
-    borderColor: Colors.primary,
-    marginBottom: Spacing.xs,
+    padding: Spacing.sm,
+    marginBottom: Spacing.md,
   },
-  testSlotCardSelected: {
-    backgroundColor: Colors.primary,
+  inUseNoticeText: {
+    fontSize: Typography.fontSize.xs,
+    color: Colors.warning,
+    fontWeight: "600",
+    lineHeight: 18,
   },
-  testSlotHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 4,
-  },
-  testSlotTag: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: Colors.primary,
-    letterSpacing: 0.5,
-  },
-  testSlotTime: {
-    fontSize: 14,
+  slotBookedTag: {
+    fontSize: 9,
+    color: Colors.error,
     fontWeight: "700",
-    color: "#FFF",
-    marginBottom: 2,
-  },
-  testSlotHint: {
-    fontSize: 11,
-    color: Colors.dark.textSecondary,
+    textTransform: "uppercase",
+    marginTop: 2,
+    letterSpacing: 0.5,
   },
 });

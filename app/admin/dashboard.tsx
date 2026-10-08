@@ -29,6 +29,7 @@ import { Input } from "../../components/ui/Input";
 import { ToastManager } from "../../components/ui/Toast";
 import { Radius, Colors, Typography, Spacing } from "../../constants/colors";
 import { getLocalDateString } from "../../lib/utils";
+import { doTimeIntervalsOverlap } from "../../lib/reservation-utils";
 import { LineChart } from "react-native-chart-kit";
 import {
   Calendar,
@@ -199,7 +200,7 @@ export default function AdminDashboard() {
   const [resDate, setResDate] = useState(getLocalDateString(new Date()));
   const [resSlot, setResSlot] = useState<{ start: string; end: string } | null>(null);
   const [resNotes, setResNotes] = useState("");
-  const [bookedSlots, setBookedSlots] = useState<string[]>([]);
+  const [bookedReservations, setBookedReservations] = useState<{ start_time: string; end_time: string }[]>([]);
   const [resSubmitting, setResSubmitting] = useState(false);
   const [clientSearch, setClientSearch] = useState("");
   const [equipSearch, setEquipSearch] = useState("");
@@ -257,12 +258,14 @@ export default function AdminDashboard() {
     const fetchBooked = async () => {
       const { data } = await supabase
         .from("reservations")
-        .select("start_time")
+        .select("start_time, end_time")
         .eq("equipment_id", resEquipId)
         .eq("reservation_date", resDate)
         .eq("status", "confirmed");
       if (data) {
-        setBookedSlots(data.map((r) => r.start_time.slice(0, 5)));
+        setBookedReservations(data);
+      } else {
+        setBookedReservations([]);
       }
     };
     fetchBooked();
@@ -431,16 +434,23 @@ export default function AdminDashboard() {
 
     setResSubmitting(true);
     try {
-      const { data: clash } = await supabase
+      const { data: existingBookings } = await supabase
         .from("reservations")
-        .select("id")
+        .select("id, start_time, end_time")
         .eq("equipment_id", resEquipId)
         .eq("reservation_date", resDate)
-        .eq("start_time", resSlot.start)
         .eq("status", "confirmed");
 
-      if (clash && clash.length > 0) {
-        ToastManager.show("Slot Taken", "This equipment is already booked for this slot.", "error");
+      const clash = (existingBookings || []).find((b) =>
+        doTimeIntervalsOverlap(resSlot.start, resSlot.end, b.start_time, b.end_time)
+      );
+
+      if (clash) {
+        ToastManager.show(
+          "Slot Taken",
+          `This equipment is already booked (${clash.start_time.slice(0, 5)} - ${clash.end_time.slice(0, 5)}).`,
+          "error"
+        );
         setResSubmitting(false);
         return;
       }
@@ -1081,7 +1091,9 @@ export default function AdminDashboard() {
                   <Text style={styles.inputLabel}>4. Select Time Slot *</Text>
                   <View style={styles.slotGrid}>
                     {timeSlots.map((slot) => {
-                      const isBooked = bookedSlots.includes(slot.start);
+                      const isBooked = bookedReservations.some((b) =>
+                        doTimeIntervalsOverlap(slot.start, slot.end, b.start_time, b.end_time)
+                      );
                       const isSelected = resSlot?.start === slot.start;
                       return (
                         <TouchableOpacity

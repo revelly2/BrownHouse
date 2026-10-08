@@ -14,6 +14,7 @@ interface EquipmentCardProps {
   equipment: Equipment;
   onReserve?: (equipment: Equipment) => void;
   onViewDetails?: (equipment: Equipment) => void;
+  activeSessionUntil?: string | null;
 }
 
 const getStatusAccent = (status: string): string => {
@@ -33,8 +34,17 @@ export function EquipmentCard({
   equipment,
   onReserve,
   onViewDetails,
+  activeSessionUntil,
 }: EquipmentCardProps) {
-  const isAvailable = equipment.status === "available";
+  const isMaintenance = equipment.status === "maintenance";
+  const isOccupied = equipment.status === "occupied";
+  const canReserve = !isMaintenance;
+
+  const statusLabel = isOccupied
+    ? activeSessionUntil
+      ? `In Use (Until ${activeSessionUntil})`
+      : "In Use Now"
+    : equipment.status;
 
   return (
     <Card variant="glass" style={styles.card}>
@@ -61,7 +71,7 @@ export function EquipmentCard({
               { color: getStatusAccent(equipment.status) },
             ]}
           >
-            {equipment.status}
+            {statusLabel}
           </Text>
         </View>
       </View>
@@ -99,21 +109,21 @@ export function EquipmentCard({
         <TouchableOpacity
           style={[
             styles.reserveBtn,
-            isAvailable ? styles.reserveBtnActive : styles.reserveBtnDisabled,
+            canReserve ? styles.reserveBtnActive : styles.reserveBtnDisabled,
           ]}
-          disabled={!isAvailable}
+          disabled={!canReserve}
           onPress={() => onReserve?.(equipment)}
           activeOpacity={0.7}
         >
           <Text
             style={[
               styles.reserveBtnText,
-              isAvailable
+              canReserve
                 ? styles.reserveBtnTextActive
                 : styles.reserveBtnTextDisabled,
             ]}
           >
-            {isAvailable ? "Reserve" : "Unavailable"}
+            {isMaintenance ? "Unavailable" : isOccupied ? "Reserve Later" : "Reserve"}
           </Text>
         </TouchableOpacity>
       </View>

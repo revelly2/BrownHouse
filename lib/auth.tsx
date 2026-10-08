@@ -62,12 +62,16 @@ export function AuthProvider({ children }: PropsWithChildren) {
       .eq("id", userId)
       .single();
 
-    if (error) {
-      console.error("Failed to fetch profile:", error.message);
+    if (error || !data) {
+      if (error) console.error("Failed to fetch profile:", error.message);
       return null;
     }
 
-    return data as Profile;
+    const p = data as any;
+    return {
+      ...p,
+      role: p.role === "admin" ? "admin" : "client",
+    } as Profile;
   }, []);
 
   // Initialize auth state on mount

@@ -29,9 +29,15 @@ import { Colors, Spacing, Typography, Radius } from "../../constants/colors";
 import { formatTime, getLocalDateString } from "../../lib/utils";
 import { Reservation, Notification as AppNotification } from "../../lib/types";
 import { router } from "expo-router";
-import { getReservationState } from "../../lib/reservation-utils";
+import { getReservationState, serializeReservationMetadata } from "../../lib/reservation-utils";
 
-const ActiveReservationCard = ({ reservation }: { reservation: Reservation }) => {
+const ActiveReservationCard = ({
+  reservation,
+  onCancel,
+}: {
+  reservation: Reservation;
+  onCancel?: () => void;
+}) => {
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
@@ -120,6 +126,45 @@ const ActiveReservationCard = ({ reservation }: { reservation: Reservation }) =>
           </Text>
         </View>
       )}
+
+      {/* Action buttons */}
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginTop: Spacing.md,
+          paddingTop: Spacing.sm,
+          borderTopWidth: 1,
+          borderTopColor: "rgba(255, 255, 255, 0.08)",
+        }}
+      >
+        <TouchableOpacity
+          style={{
+            paddingVertical: 6,
+            paddingHorizontal: 12,
+            borderRadius: Radius.sm,
+            borderWidth: 1,
+            borderColor: "rgba(239, 68, 68, 0.4)",
+            backgroundColor: "rgba(239, 68, 68, 0.1)",
+          }}
+          onPress={onCancel}
+          activeOpacity={0.7}
+        >
+          <Text style={{ color: "#EF4444", fontSize: 12, fontWeight: "600" }}>
+            Cancel Active Session
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => router.push("/client/reservations")}
+          activeOpacity={0.7}
+        >
+          <Text style={{ color: Colors.primary, fontSize: 12, fontWeight: "600" }}>
+            Manage Bookings →
+          </Text>
+        </TouchableOpacity>
+      </View>
     </Card>
   );
 };
@@ -214,9 +259,63 @@ export default function ClientDashboard() {
     });
   };
 
+  const handleCancelActive = (res: Reservation) => {
+    Alert.alert(
+      "Cancel Active Session",
+      "Are you sure you want to cancel and end this active workout session? The equipment will immediately become available for other members.",
+      [
+        { text: "Keep Session", style: "cancel" },
+        {
+          text: "Yes, Cancel Session",
+          style: "destructive",
+          onPress: async () => {
+            const { error } = await supabase
+              .from("reservations")
+              .update({
+                status: "cancelled",
+                notes: serializeReservationMetadata(
+                  { cancel_reason: "Cancelled early by user from dashboard" },
+                  res.notes
+                ),
+              })
+              .eq("id", res.id);
+            if (!error) {
+              await fetchDashboardData();
+            }
+          },
+        },
+      ]
+    );
+  };
+
   useEffect(() => {
     fetchDashboardData();
     checkDailyMeasurement();
+
+    if (!profile) return;
+
+    const channel = supabase
+      .channel("client-dashboard-realtime-reservations")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "reservations",
+          filter: `client_id=eq.${profile.id}`,
+        },
+        () => fetchDashboardData()
+      )
+      .subscribe();
+
+    const interval = setInterval(() => {
+      fetchDashboardData();
+    }, 3000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+    };
   }, [profile]);
 
   const checkDailyMeasurement = async () => {
@@ -619,7 +718,12 @@ export default function ClientDashboard() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Upcoming Reservations</Text>
 
-        {activeRes && <ActiveReservationCard reservation={activeRes} />}
+        {activeRes && (
+          <ActiveReservationCard
+            reservation={activeRes}
+            onCancel={() => handleCancelActive(activeRes)}
+          />
+        )}
 
         {futureRes.length === 0 && !activeRes ? (
           <Card variant="glass">
