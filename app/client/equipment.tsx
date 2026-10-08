@@ -56,12 +56,19 @@ export default function EquipmentScreen() {
   const [slotModalVisible, setSlotModalVisible] = useState(false);
   const [selectedEquipment, setSelectedEquipment] = useState<EquipmentWithLiveStatus | null>(null);
   const [availableSlots, setAvailableSlots] = useState<
-    { start: string; end: string; available: boolean; reason?: string }[]
+    {
+      start: string;
+      end: string;
+      available: boolean;
+      isCurrent?: boolean;
+      reason?: string;
+    }[]
   >([]);
   const [selectedSlot, setSelectedSlot] = useState<{
     start: string;
     end: string;
     available?: boolean;
+    isCurrent?: boolean;
     reason?: string;
   } | null>(null);
   const dateOptions = Array.from({ length: 7 }, (_, i) => {
@@ -237,6 +244,7 @@ export default function EquipmentScreen() {
       start: string;
       end: string;
       available: boolean;
+      isCurrent?: boolean;
       reason?: string;
     }[] = [];
     const now = new Date();
@@ -276,13 +284,22 @@ export default function EquipmentScreen() {
         slot.reason = `In Use / Reserved (${bStart} - ${bEnd})`;
       }
 
-      // 2. Disable past slots if booking for today
+      // 2. Ongoing slot or past time evaluation for Today
       if (isToday) {
         const slotStartMin = timeStringToMinutes(slot.start);
+        const slotEndMin = timeStringToMinutes(slot.end);
         const currentTotalMin = currentHour * 60 + currentMin;
-        if (slotStartMin <= currentTotalMin) {
+
+        // If slot has already ended, disable it
+        if (currentTotalMin >= slotEndMin) {
           slot.available = false;
           if (!slot.reason) slot.reason = "Past time";
+        } else if (currentTotalMin >= slotStartMin && currentTotalMin < slotEndMin) {
+          // Ongoing slot happening right now (e.g. 12:30 - 1:30 PM when it's 12:30 PM)
+          // If not occupied by another booking, it is OPEN NOW and available to reserve!
+          if (slot.available) {
+            slot.isCurrent = true;
+          }
         }
       }
     }
@@ -551,6 +568,7 @@ export default function EquipmentScreen() {
                       key={index}
                       style={[
                         styles.slotChip,
+                        slot.available && !isSelected && styles.slotChipAvailable,
                         !slot.available && styles.slotChipDisabled,
                         isSelected && styles.slotChipSelected,
                       ]}
@@ -566,9 +584,18 @@ export default function EquipmentScreen() {
                       >
                         {formatTime12Hour(slot.start)} - {formatTime12Hour(slot.end)}
                       </Text>
-                      {!slot.available && slot.reason?.includes("In Use") && (
+                      {slot.available ? (
+                        <Text
+                          style={[
+                            styles.slotOpenTag,
+                            isSelected && { color: "#000", fontWeight: "800" },
+                          ]}
+                        >
+                          {slot.isCurrent ? "● Open Now" : "● Open"}
+                        </Text>
+                      ) : slot.reason?.includes("In Use") ? (
                         <Text style={styles.slotBookedTag}>Occupied</Text>
-                      )}
+                      ) : null}
                     </TouchableOpacity>
                   );
                 })}
@@ -727,6 +754,10 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255, 255, 255, 0.1)",
     alignItems: "center",
   },
+  slotChipAvailable: {
+    borderColor: "rgba(16, 185, 129, 0.35)",
+    backgroundColor: "rgba(16, 185, 129, 0.06)",
+  },
   slotChipDisabled: {
     backgroundColor: "rgba(255, 255, 255, 0.02)",
     borderColor: "transparent",
@@ -734,6 +765,14 @@ const styles = StyleSheet.create({
   slotChipSelected: {
     backgroundColor: Colors.primary,
     borderColor: Colors.primary,
+  },
+  slotOpenTag: {
+    fontSize: 9,
+    color: Colors.success,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    marginTop: 3,
+    letterSpacing: 0.5,
   },
   slotText: {
     color: Colors.dark.textSecondary,
