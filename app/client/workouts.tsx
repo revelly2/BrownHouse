@@ -24,7 +24,7 @@ import { Colors, Spacing, Typography, Radius } from "../../constants/colors";
 import { WorkoutPlan, CompletedSession } from "../../lib/types";
 import { ToastManager } from "../../components/ui/Toast";
 import { Play, Check, ChevronDown, ChevronUp, Trash2, Zap, Cpu, Sparkles, Bot } from "lucide-react-native";
-import { getAISettings, generateWorkoutPlan, AIProvider } from "../../lib/ai-service";
+import { getAISettings, generateWorkoutPlan, generateFITTFallbackPlan, AIProvider } from "../../lib/ai-service";
 
 // ─────────────────────────────────────────────
 // Wizard config
@@ -356,8 +356,50 @@ export default function WorkoutsScreen() {
         showAlert("Error", plan?.error ?? "Failed to generate plan exercises.");
       }
     } catch (err: any) {
-      console.error("[AI] Exception:", err);
-      showAlert("Error", err?.message ?? "Failed to connect to AI service.");
+      console.warn("[AI] Error encountered, activating intelligent FITT fallback:", err);
+      try {
+        const { data: dbExercises } = await supabase.from("exercises").select("id, name, muscle_group");
+        const fallbackPlan = generateFITTFallbackPlan(profile, dbExercises || [], preferences, "Intelligent Engine");
+        const clientId = profile?.id ?? user?.id;
+        if (clientId) {
+          const { data: planData } = await supabase.from("workout_plans").insert({
+            client_id: clientId,
+            goal: fallbackPlan.goal,
+            difficulty_level: fallbackPlan.difficulty,
+            description: fallbackPlan.plan_name,
+            fitt_frequency: fallbackPlan.fitt.frequency,
+            fitt_intensity: fallbackPlan.fitt.intensity,
+            fitt_time: fallbackPlan.fitt.time,
+            fitt_type: fallbackPlan.fitt.type,
+            is_ai_generated: true,
+          }).select().single();
+
+          if (planData && dbExercises) {
+            const detailsToInsert = fallbackPlan.exercises.map((ex: any, idx: number) => {
+              const matched = dbExercises.find((d: any) => d.name.toLowerCase() === ex.name.toLowerCase());
+              if (!matched) return null;
+              return {
+                plan_id: planData.id,
+                exercise_id: matched.id,
+                sets: ex.sets,
+                reps: ex.reps,
+                rest_seconds: ex.rest_seconds,
+                ordering: idx,
+              };
+            }).filter(Boolean);
+
+            if (detailsToInsert.length > 0) {
+              await supabase.from("workout_details").insert(detailsToInsert);
+            }
+          }
+          showAlert("Plan Ready", "Generated using intelligent fitness engine (AI quota exhausted).");
+          fetchData();
+          return;
+        }
+      } catch (innerErr) {
+        console.warn("[AI] Fallback error:", innerErr);
+      }
+      showAlert("Notice", "Could not generate plan. Please try again.");
     } finally {
       setGenerating(false);
     }
@@ -560,7 +602,7 @@ export default function WorkoutsScreen() {
             }}>
               {selectedAiProvider === 'claude' ? <Cpu size={13} color="#C084FC" /> : <Zap size={13} color={Colors.primary} />}
               <Text style={{ fontSize: 11, fontWeight: '700', color: selectedAiProvider === 'claude' ? '#C084FC' : Colors.primary }}>
-                {selectedAiProvider === 'claude' ? 'Claude 3.5 Haiku Active' : 'Gemini 3.5 Flash Active'}
+                {selectedAiProvider === 'claude' ? 'Claude 3.5 Haiku Active' : 'Gemini Flash-Lite Active'}
               </Text>
             </View>
           </View>
@@ -588,7 +630,7 @@ export default function WorkoutsScreen() {
                     selectedAiProvider === "gemini" && styles.aiSelectorPillTextActiveGemini,
                   ]}
                 >
-                  ⚡ Gemini 3.5 Flash
+                  ⚡ Gemini Flash-Lite
                 </Text>
               </TouchableOpacity>
 

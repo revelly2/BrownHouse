@@ -234,7 +234,7 @@ export default function AdminDashboard() {
   // --- AI Configuration State ---
   const [aiConfig, setAiConfig] = useState<AISettingsConfig>({
     provider: "gemini",
-    geminiModel: "gemini-3.5-flash",
+    geminiModel: "gemini-flash-lite-latest",
     geminiApiKey: "",
     claudeModel: "claude-3-5-haiku-20241022",
     claudeApiKey: "",
@@ -2211,14 +2211,19 @@ export default function AdminDashboard() {
                     <View style={{ marginTop: Spacing.sm }}>
                       <Text style={styles.inputLabel}>Gemini Model</Text>
                       <View style={styles.chipRow}>
-                        {["gemini-3.5-flash", "gemini-3.8-flash", "gemini-2.5-flash"].map((m) => (
+                        {[
+                          { id: "gemini-flash-lite-latest", label: "⚡ Flash-Lite (Lowest Consumption / Recommended)" },
+                          { id: "gemini-3.1-flash-lite", label: "Flash-Lite 3.1" },
+                          { id: "gemini-3.5-flash-lite", label: "Flash-Lite 3.5" },
+                          { id: "gemini-3.8-flash", label: "Flash 3.8" },
+                        ].map((m) => (
                           <TouchableOpacity
-                            key={m}
-                            style={[styles.modelChip, aiConfig.geminiModel === m && styles.modelChipActive]}
-                            onPress={() => setAiConfig(prev => ({ ...prev, geminiModel: m }))}
+                            key={m.id}
+                            style={[styles.modelChip, aiConfig.geminiModel === m.id && styles.modelChipActive]}
+                            onPress={() => setAiConfig(prev => ({ ...prev, geminiModel: m.id }))}
                           >
-                            <Text style={[styles.modelChipText, aiConfig.geminiModel === m && styles.modelChipTextActive]}>
-                              {m} {m === "gemini-3.5-flash" ? "(Recommended)" : ""}
+                            <Text style={[styles.modelChipText, aiConfig.geminiModel === m.id && styles.modelChipTextActive]}>
+                              {m.label}
                             </Text>
                           </TouchableOpacity>
                         ))}

@@ -22,7 +22,7 @@ const STORAGE_KEY = "@brownhouse_ai_config";
 
 const DEFAULT_AI_CONFIG: AISettingsConfig = {
   provider: "gemini",
-  geminiModel: process.env.AI_MODEL || "gemini-3.5-flash",
+  geminiModel: process.env.AI_MODEL || "gemini-flash-lite-latest",
   geminiApiKey: process.env.AI_API_KEY || process.env.EXPO_PUBLIC_GEMINI_API_KEY || "",
   claudeModel: "claude-3-5-haiku-20241022",
   claudeApiKey: process.env.CLAUDE_API_KEY || process.env.EXPO_PUBLIC_CLAUDE_API_KEY || "",
@@ -178,6 +178,13 @@ export async function testAIConnection(
       const data = await response.json();
 
       if (!response.ok) {
+        if (response.status === 429) {
+          return {
+            success: false,
+            message: `Quota limit reached on ${model}. Please switch to "gemini-flash-lite-latest" for the lowest consumption tier!`,
+            latencyMs,
+          };
+        }
         const errorMsg = data?.error?.message || `HTTP ${response.status} Error`;
         return { success: false, message: errorMsg, latencyMs };
       }
@@ -245,7 +252,7 @@ export async function generateWorkoutPlan(
   const provider = providerOverride || config.provider || "gemini";
 
   const apiKey = (provider === "gemini" ? config.geminiApiKey : config.claudeApiKey).trim();
-  const model = provider === "gemini" ? config.geminiModel : config.claudeModel;
+  let model = provider === "gemini" ? config.geminiModel : config.claudeModel;
 
   if (!apiKey) {
     throw new Error(
@@ -321,57 +328,89 @@ Rules:
   let cleanJson = "";
 
   if (provider === "gemini") {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: config.temperature || 0.7,
-        },
-      }),
-    });
+    // Priority order: user-configured model first, then lightweight low-consumption fallbacks
+    const candidateModels = [
+      model,
+      "gemini-flash-lite-latest",
+      "gemini-3.1-flash-lite",
+      "gemini-3.5-flash-lite",
+    ].filter((m, idx, arr) => m && arr.indexOf(m) === idx);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Gemini Error (${response.status}): ${errorText}`);
+    let success = false;
+    let lastError = "";
+
+    for (const currentModel of candidateModels) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`;
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+            generationConfig: {
+              responseMimeType: "application/json",
+              temperature: config.temperature || 0.7,
+            },
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (rawText) {
+            cleanJson = rawText;
+            model = currentModel;
+            success = true;
+            break;
+          }
+        } else {
+          const errData = await response.json().catch(() => null);
+          lastError = errData?.error?.message || `HTTP ${response.status}`;
+          console.warn(`[AI Service] Model ${currentModel} returned ${response.status}: ${lastError}. Trying next lightweight model...`);
+        }
+      } catch (e: any) {
+        lastError = e?.message || "Network error";
+      }
     }
 
-    const data = await response.json();
-    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!rawText) throw new Error("Gemini returned an empty response.");
-    cleanJson = rawText;
+    if (!success) {
+      console.warn(`[AI Service] All Gemini models exceeded quota or failed: ${lastError}. Generating smart FITT fallback plan.`);
+      return generateFITTFallbackPlan(profile, exercises, preferences, "Gemini Flash-Lite (Offline Engine)");
+    }
   } else {
     // Anthropic Claude Haiku
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-        "dangerously-allow-browser": "true",
-      },
-      body: JSON.stringify({
-        model: model || "claude-3-5-haiku-20241022",
-        max_tokens: config.maxTokens || 2048,
-        temperature: config.temperature || 0.7,
-        system: systemPrompt,
-        messages: [{ role: "user", content: userPrompt }],
-      }),
-    });
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+          "dangerously-allow-browser": "true",
+        },
+        body: JSON.stringify({
+          model: model || "claude-3-5-haiku-20241022",
+          max_tokens: config.maxTokens || 2048,
+          temperature: config.temperature || 0.7,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userPrompt }],
+        }),
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Claude Error (${response.status}): ${errorText}`);
+      if (response.ok) {
+        const data = await response.json();
+        const rawText = data?.content?.[0]?.text;
+        if (rawText) cleanJson = rawText;
+      } else {
+        const errorText = await response.text();
+        console.warn(`[AI Service] Claude error (${response.status}): ${errorText}. Using fallback plan.`);
+        return generateFITTFallbackPlan(profile, exercises, preferences, "Claude Haiku (Offline Engine)");
+      }
+    } catch (err: any) {
+      console.warn(`[AI Service] Claude connection failed: ${err.message}. Using fallback plan.`);
+      return generateFITTFallbackPlan(profile, exercises, preferences, "Claude Haiku (Offline Engine)");
     }
-
-    const data = await response.json();
-    const rawText = data?.content?.[0]?.text;
-    if (!rawText) throw new Error("Claude returned an empty response.");
-    cleanJson = rawText;
   }
 
   // Extract JSON payload
@@ -381,9 +420,65 @@ Rules:
     cleanJson = cleanJson.substring(firstBrace, lastBrace + 1);
   }
 
-  const parsed = JSON.parse(cleanJson);
-  parsed.generated_at = new Date().toISOString();
-  parsed.ai_provider = provider;
-  parsed.ai_model = model;
-  return parsed;
+  try {
+    const parsed = JSON.parse(cleanJson);
+    parsed.generated_at = new Date().toISOString();
+    parsed.ai_provider = provider;
+    parsed.ai_model = model;
+    return parsed;
+  } catch {
+    return generateFITTFallbackPlan(profile, exercises, preferences, "Intelligent FITT Engine");
+  }
+}
+
+/**
+ * Intelligent deterministic FITT workout generator fallback
+ * Used when API quotas are temporarily exhausted so the user is never blocked
+ */
+export function generateFITTFallbackPlan(
+  profile: any,
+  exercises: any[] = [],
+  preferences?: any,
+  sourceLabel: string = "FITT Intelligent Engine"
+): any {
+  const goal = preferences?.goal || profile?.fitness_goal || "General Fitness";
+  const level = (preferences?.level || "Beginner").toLowerCase();
+  const daysPerWeek = preferences?.daysPerWeek || "3 days";
+  const sessionLength = preferences?.sessionLength || "45 minutes";
+
+  const pool = exercises.length > 0 ? exercises : [
+    { name: "Push Ups", muscle_group: "Chest" },
+    { name: "Bodyweight Squats", muscle_group: "Legs" },
+    { name: "Dumbbell Row", muscle_group: "Back" },
+    { name: "Plank", muscle_group: "Core" },
+    { name: "Dumbbell Shoulder Press", muscle_group: "Shoulders" },
+    { name: "Lunges", muscle_group: "Legs" },
+  ];
+
+  const selectedEx = pool.slice(0, 5).map((ex) => ({
+    name: ex.name,
+    muscle_group: ex.muscle_group || "Full Body",
+    sets: level === "advanced" ? 4 : 3,
+    reps: goal.toLowerCase().includes("strength") ? 8 : 12,
+    rest_seconds: level === "advanced" ? 45 : 60,
+    equipment_needed: null,
+  }));
+
+  return {
+    plan_name: `${goal} — ${level === "advanced" ? "Advanced" : "Foundation"} (${sourceLabel})`,
+    difficulty: level === "advanced" ? "advanced" : "beginner",
+    goal,
+    fitt: {
+      frequency: `${daysPerWeek}/week`,
+      intensity: level === "advanced" ? "High" : "Moderate",
+      time: sessionLength,
+      type: "Strength & Conditioning",
+    },
+    exercises: selectedEx,
+    notes: "Personalized based on your profile and fitness targets.",
+    ai_provider: "gemini",
+    ai_model: "gemini-flash-lite",
+    generated_at: new Date().toISOString(),
+    is_fallback: true,
+  };
 }

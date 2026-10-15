@@ -159,9 +159,9 @@ async function generateWithAI(
       : Deno.env.get("AI_API_KEY"));
   const apiUrl =
     Deno.env.get("AI_API_URL") ?? "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
-  let model = customModel || preferences?.ai_model || (provider === "claude" ? "claude-3-5-haiku-20241022" : (Deno.env.get("AI_MODEL") ?? "gemini-3.5-flash"));
-  if (model === "gemini-1.5-flash" || model === "gemini-2.5-flash") {
-    model = "gemini-3.5-flash";
+  let model = customModel || preferences?.ai_model || (provider === "claude" ? "claude-3-5-haiku-20241022" : (Deno.env.get("AI_MODEL") ?? "gemini-flash-lite-latest"));
+  if (model === "gemini-1.5-flash" || model === "gemini-2.5-flash" || model === "gemini-3.5-flash" || model === "gemini-3.6-flash") {
+    model = "gemini-flash-lite-latest";
   }
 
   if (!apiKey) {
