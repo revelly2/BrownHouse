@@ -23,7 +23,8 @@ import { Button } from "../../components/ui/Button";
 import { Colors, Spacing, Typography, Radius } from "../../constants/colors";
 import { WorkoutPlan, CompletedSession } from "../../lib/types";
 import { ToastManager } from "../../components/ui/Toast";
-import { Play, Check, ChevronDown, ChevronUp, Trash2 } from "lucide-react-native";
+import { Play, Check, ChevronDown, ChevronUp, Trash2, Zap, Cpu, Sparkles, Bot } from "lucide-react-native";
+import { getAISettings, generateWorkoutPlan, AIProvider } from "../../lib/ai-service";
 
 // ─────────────────────────────────────────────
 // Wizard config
@@ -177,6 +178,9 @@ export default function WorkoutsScreen() {
   const [exerciseTimings, setExerciseTimings] = useState<Record<string, number>>({});
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
 
+  // ── AI Engine Selection (Gemini vs Claude Haiku) ──
+  const [selectedAiProvider, setSelectedAiProvider] = useState<AIProvider>("gemini");
+
   // ── Wizard state ──
   const [showWizard, setShowWizard] = useState(false);
   const [wizardStep, setWizardStep] = useState(0);
@@ -229,6 +233,11 @@ export default function WorkoutsScreen() {
 
   useEffect(() => {
     fetchData();
+    getAISettings()
+      .then((cfg) => {
+        if (cfg?.provider) setSelectedAiProvider(cfg.provider);
+      })
+      .catch(() => {});
   }, [profile]);
 
   const onRefresh = async () => {
@@ -238,7 +247,7 @@ export default function WorkoutsScreen() {
   };
 
   // ─────────────────────────────────────────────
-  // AI Plan Generator
+  // AI Plan Generator (Gemini & Claude Haiku Support)
   // ─────────────────────────────────────────────
 
   const generateAIPlan = async (preferences?: WizardAnswers) => {
@@ -249,21 +258,38 @@ export default function WorkoutsScreen() {
     };
 
     try {
-      console.log("[AI] Calling edge function with preferences:", preferences);
+      const { data: dbExercises } = await supabase.from("exercises").select("id, name, muscle_group");
+      const recentPlanTitles = plans.map(p => p.description || p.goal);
 
-      // Use supabase.functions.invoke — it handles auth tokens automatically
-      const { data: plan, error: fnError } = await supabase.functions.invoke(
-        "ai-recommendation",
-        {
-          body: preferences ? { preferences } : {},
+      let plan: any = null;
+
+      // 1. Attempt edge function call first
+      try {
+        const { data: edgeData, error: fnError } = await supabase.functions.invoke(
+          "ai-recommendation",
+          {
+            body: {
+              preferences,
+              customProvider: selectedAiProvider,
+            },
+          }
+        );
+        if (!fnError && edgeData && edgeData.exercises) {
+          plan = edgeData;
         }
-      );
+      } catch (e) {
+        console.warn("Edge function invocation failed, trying direct AI service:", e);
+      }
 
-      console.log("[AI] Response:", plan, "Error:", fnError);
-
-      if (fnError) {
-        showAlert("Error", fnError.message ?? "Edge function call failed.");
-        return;
+      // 2. Direct service fallback if edge function isn't available locally
+      if (!plan || !plan.exercises) {
+        plan = await generateWorkoutPlan(
+          profile,
+          dbExercises || [],
+          recentPlanTitles,
+          preferences,
+          selectedAiProvider
+        );
       }
 
       if (plan && plan.exercises) {
@@ -273,34 +299,39 @@ export default function WorkoutsScreen() {
           return;
         }
 
+        const providerLabel = (plan.ai_provider || selectedAiProvider) === "claude" ? "Claude 3.5 Haiku" : "Gemini 3.5 Flash";
+        const planName = plan.plan_name?.includes("AI") 
+          ? plan.plan_name 
+          : `${plan.plan_name || plan.goal} (${providerLabel})`;
+
         const { data: planData, error: planError } = await supabase
           .from("workout_plans")
           .insert({
             client_id: clientId,
-            goal: plan.goal,
-            difficulty_level: plan.difficulty.toLowerCase(),
-            description: plan.plan_name,
-            fitt_frequency: plan.fitt.frequency,
-            fitt_intensity: plan.fitt.intensity,
-            fitt_time: plan.fitt.time,
-            fitt_type: plan.fitt.type,
+            goal: plan.goal || preferences?.goal || "Fitness",
+            difficulty_level: (plan.difficulty || preferences?.level || "beginner").toLowerCase(),
+            description: planName,
+            fitt_frequency: plan.fitt?.frequency || "3-4 days/week",
+            fitt_intensity: plan.fitt?.intensity || "Moderate",
+            fitt_time: plan.fitt?.time || "45 minutes",
+            fitt_type: plan.fitt?.type || "General Fitness",
             is_ai_generated: true,
           })
           .select()
           .single();
 
         if (planError || !planData) {
-          console.log("[AI] DB insert error:", planError);
           showAlert("Error", planError?.message ?? "Failed to save workout plan.");
           return;
         }
 
-        const { data: dbExercises } = await supabase.from("exercises").select("id, name");
         if (dbExercises) {
           const detailsToInsert = plan.exercises
             .map((aiEx: any, index: number) => {
               const matchedEx = dbExercises.find(
                 (dbEx: any) => dbEx.name.toLowerCase() === aiEx.name.toLowerCase()
+              ) || dbExercises.find(
+                (dbEx: any) => dbEx.muscle_group?.toLowerCase() === (aiEx.muscle_group || "").toLowerCase()
               );
               if (!matchedEx) return null;
               return {
@@ -318,14 +349,15 @@ export default function WorkoutsScreen() {
             await supabase.from("workout_details").insert(detailsToInsert);
           }
         }
-        showAlert("✅ Success", "AI workout plan generated!");
+
+        showAlert("Success", `AI Plan generated with ${providerLabel}!`);
         fetchData();
       } else {
-        showAlert("Error", plan?.error ?? "Failed to generate plan. Check AI API key in Supabase.");
+        showAlert("Error", plan?.error ?? "Failed to generate plan exercises.");
       }
     } catch (err: any) {
       console.error("[AI] Exception:", err);
-      showAlert("Error", "Failed to connect to AI service: " + (err?.message ?? "Unknown error"));
+      showAlert("Error", err?.message ?? "Failed to connect to AI service.");
     } finally {
       setGenerating(false);
     }
@@ -513,23 +545,95 @@ export default function WorkoutsScreen() {
 
         {/* Create & AI Card */}
         <Card variant="glassElevated" style={styles.aiCard}>
-          <Text style={styles.aiTitle}>Build Your Workout Plan</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm, flexWrap: 'wrap', gap: 8 }}>
+            <Text style={styles.aiTitle}>Build Your Workout Plan</Text>
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 5,
+              backgroundColor: selectedAiProvider === 'claude' ? 'rgba(192, 132, 252, 0.12)' : 'rgba(235, 94, 40, 0.12)',
+              paddingHorizontal: 10,
+              paddingVertical: 4,
+              borderRadius: Radius.full,
+              borderWidth: 1,
+              borderColor: selectedAiProvider === 'claude' ? 'rgba(192, 132, 252, 0.3)' : 'rgba(235, 94, 40, 0.3)'
+            }}>
+              {selectedAiProvider === 'claude' ? <Cpu size={13} color="#C084FC" /> : <Zap size={13} color={Colors.primary} />}
+              <Text style={{ fontSize: 11, fontWeight: '700', color: selectedAiProvider === 'claude' ? '#C084FC' : Colors.primary }}>
+                {selectedAiProvider === 'claude' ? 'Claude 3.5 Haiku Active' : 'Gemini 3.5 Flash Active'}
+              </Text>
+            </View>
+          </View>
+
           <Text style={styles.aiDescription}>
-            Answer a few quick questions and we'll build a personalized FITT
-            plan for you — or let AI generate one from your profile.
+            Select your preferred AI engine below and answer a few quick questions to create a personalized FITT workout plan.
           </Text>
+
+          {/* AI Coach Selection Buttons */}
+          <View style={styles.aiSelectorContainer}>
+            <Text style={styles.aiSelectorLabel}>Select AI Coach:</Text>
+            <View style={styles.aiSelectorPills}>
+              <TouchableOpacity
+                style={[
+                  styles.aiSelectorPill,
+                  selectedAiProvider === "gemini" && styles.aiSelectorPillActiveGemini,
+                ]}
+                onPress={() => setSelectedAiProvider("gemini")}
+                activeOpacity={0.8}
+              >
+                <Zap size={14} color={selectedAiProvider === "gemini" ? Colors.primary : Colors.light.textTertiary} />
+                <Text
+                  style={[
+                    styles.aiSelectorPillText,
+                    selectedAiProvider === "gemini" && styles.aiSelectorPillTextActiveGemini,
+                  ]}
+                >
+                  ⚡ Gemini 3.5 Flash
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.aiSelectorPill,
+                  selectedAiProvider === "claude" && styles.aiSelectorPillActiveClaude,
+                ]}
+                onPress={() => setSelectedAiProvider("claude")}
+                activeOpacity={0.8}
+              >
+                <Cpu size={14} color={selectedAiProvider === "claude" ? "#C084FC" : Colors.light.textTertiary} />
+                <Text
+                  style={[
+                    styles.aiSelectorPillText,
+                    selectedAiProvider === "claude" && styles.aiSelectorPillTextActiveClaude,
+                  ]}
+                >
+                  🧠 Claude 3.5 Haiku
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
           <View style={styles.btnRow}>
             <TouchableOpacity
-              style={styles.createPlanBtn}
+              style={[
+                styles.createPlanBtn,
+                selectedAiProvider === "claude" && { borderColor: "rgba(192, 132, 252, 0.45)" }
+              ]}
               onPress={openWizard}
               activeOpacity={0.85}
+              disabled={generating}
             >
               <Text style={styles.createPlanEmoji}>✨</Text>
-              <Text style={styles.createPlanText}>{generating ? "Generating..." : "AI Generate"}</Text>
+              <Text style={[
+                styles.createPlanText,
+                selectedAiProvider === "claude" && { color: "#C084FC" }
+              ]}>
+                {generating ? "Generating Plan..." : `AI Generate (${selectedAiProvider === "claude" ? "Claude Haiku" : "Gemini"})`}
+              </Text>
             </TouchableOpacity>
             <Button
               title="Manual Plan"
-              variant="primary"
+              variant="outline"
               size="md"
               onPress={() => router.push("/client/workout-form")}
               style={{ flex: 1 }}
@@ -641,7 +745,11 @@ export default function WorkoutsScreen() {
                       size="sm"
                     />
                     {plan.is_ai_generated && (
-                      <Badge label="AI" variant="info" size="sm" />
+                      <Badge
+                        label={plan.description?.toLowerCase().includes("claude") ? "Claude Haiku" : "Gemini AI"}
+                        variant={plan.description?.toLowerCase().includes("claude") ? "secondary" : "info"}
+                        size="sm"
+                      />
                     )}
                     <TouchableOpacity
                       onPress={() => handleDeletePlan(plan.id)}
@@ -856,7 +964,9 @@ export default function WorkoutsScreen() {
               <>
                 <Text style={styles.wizardEmoji}>{currentStep?.emoji}</Text>
                 <Text style={styles.wizardQuestion}>{currentStep?.question}</Text>
-                <Text style={styles.wizardSubtitle}>{currentStep?.subtitle}</Text>
+                <Text style={styles.wizardSubtitle}>
+                  Coach: {selectedAiProvider === 'claude' ? '🧠 Claude 3.5 Haiku' : '⚡ Gemini 3.5 Flash'} • {currentStep?.subtitle}
+                </Text>
 
                 <View style={styles.wizardOptions}>
                   {currentStep?.options.map((opt) => {
@@ -922,7 +1032,59 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.sm,
     color: Colors.light.textSecondary,
     lineHeight: Typography.fontSize.sm * Typography.lineHeight.normal,
+    marginBottom: Spacing.md,
+  },
+  aiSelectorContainer: {
     marginBottom: Spacing.lg,
+    padding: Spacing.md,
+    backgroundColor: "rgba(255, 255, 255, 0.03)",
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.06)",
+  },
+  aiSelectorLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.light.textSecondary,
+    marginBottom: 8,
+  },
+  aiSelectorPills: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
+  aiSelectorPill: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  aiSelectorPillActiveGemini: {
+    borderColor: Colors.primary,
+    backgroundColor: "rgba(251, 191, 36, 0.12)",
+  },
+  aiSelectorPillActiveClaude: {
+    borderColor: "#C084FC",
+    backgroundColor: "rgba(192, 132, 252, 0.12)",
+  },
+  aiSelectorPillText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.light.textSecondary,
+  },
+  aiSelectorPillTextActiveGemini: {
+    color: Colors.primary,
+    fontWeight: "700",
+  },
+  aiSelectorPillTextActiveClaude: {
+    color: "#C084FC",
+    fontWeight: "700",
   },
   btnRow: { flexDirection: "row", gap: Spacing.sm },
   createPlanBtn: {

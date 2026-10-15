@@ -6,7 +6,7 @@ import React from "react";
 import { View, Text, StyleSheet, ViewStyle } from "react-native";
 import { Colors, Radius, Spacing, Typography } from "../../constants/colors";
 
-type BadgeVariant = "success" | "warning" | "error" | "info" | "neutral";
+type BadgeVariant = "success" | "warning" | "error" | "info" | "neutral" | "secondary";
 
 interface BadgeProps {
   label: string;
@@ -22,6 +22,7 @@ const variantColors: Record<BadgeVariant, { bg: string; text: string; dot: strin
   error: { bg: "rgba(255, 107, 107, 0.12)", text: Colors.error, dot: Colors.error },
   info: { bg: "rgba(108, 99, 255, 0.12)", text: Colors.primary, dot: Colors.primary },
   neutral: { bg: "rgba(107, 114, 128, 0.12)", text: Colors.light.textSecondary, dot: Colors.light.textSecondary },
+  secondary: { bg: "rgba(192, 132, 252, 0.15)", text: "#C084FC", dot: "#C084FC" },
 };
 
 export function Badge({ label, variant = "neutral", size = "md", style, dot = false }: BadgeProps) {

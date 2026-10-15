@@ -140,25 +140,33 @@ function buildFallbackPlan(
   };
 }
 
-// ---- AI API Integration (OpenAI-compatible) ----
+// ---- AI API Integration (Gemini & Anthropic Claude Haiku) ----
 
 async function generateWithAI(
   profile: UserProfile,
   exercises: ExerciseRow[],
   recentPlans: string[] = [],
-  preferences?: Record<string, any>
+  preferences?: Record<string, any>,
+  customProvider?: string,
+  customModel?: string,
+  customKey?: string
 ): Promise<WorkoutPlanPayload | null> {
-  const apiKey = Deno.env.get("AI_API_KEY");
+  const provider = (customProvider || preferences?.ai_provider || Deno.env.get("AI_PROVIDER") || "gemini").toLowerCase();
+  const apiKey =
+    customKey ||
+    (provider === "claude"
+      ? Deno.env.get("CLAUDE_API_KEY") || Deno.env.get("ANTHROPIC_API_KEY") || Deno.env.get("AI_API_KEY")
+      : Deno.env.get("AI_API_KEY"));
   const apiUrl =
-    Deno.env.get("AI_API_URL") ?? "https://api.openai.com/v1/chat/completions";
-  let model = Deno.env.get("AI_MODEL") ?? "gpt-4o-mini";
-  if (model === "gemini-1.5-flash") {
+    Deno.env.get("AI_API_URL") ?? "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+  let model = customModel || preferences?.ai_model || (provider === "claude" ? "claude-3-5-haiku-20241022" : (Deno.env.get("AI_MODEL") ?? "gemini-3.5-flash"));
+  if (model === "gemini-1.5-flash" || model === "gemini-2.5-flash") {
     model = "gemini-3.5-flash";
   }
 
   if (!apiKey) {
     console.log(
-      "AI_API_KEY not configured — falling back to rule-based engine."
+      `AI API key not configured for provider ${provider} — falling back to rule-based engine.`
     );
     return null;
   }
@@ -214,21 +222,95 @@ CRITICAL: If strict user preferences are provided above, your JSON output MUST p
 
   try {
     let response;
-    let isGemini = apiUrl.includes("generativelanguage.googleapis.com") || model.toLowerCase().includes("gemini");
+    const isClaude = provider === "claude" || model.toLowerCase().includes("claude") || model.toLowerCase().includes("haiku");
 
-    if (isGemini) {
-      // Construct native Gemini URL
-      let finalUrl = apiUrl;
-      if (apiUrl.includes("openai/chat/completions")) {
-         // Fix the URL if we previously forced it to the OpenAI proxy
-         finalUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-      } else if (!apiUrl.includes("generateContent")) {
-         finalUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    if (isClaude) {
+      // Anthropic Claude Haiku API
+      response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: model || "claude-3-5-haiku-20241022",
+          max_tokens: 2048,
+          temperature: 0.7,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userPrompt }],
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Claude API Error ${response.status}: ${errorText}`);
       }
-      
-      // Append API key to URL
-      if (!finalUrl.includes("key=")) {
-         finalUrl += finalUrl.includes("?") ? `&key=${apiKey}` : `?key=${apiKey}`;
+
+      const data = await response.json();
+      const content = data.content?.[0]?.text;
+      if (!content) {
+        throw new Error("Claude API returned empty content.");
+      }
+
+      let cleanContent = content;
+      const firstBrace = cleanContent.indexOf("{");
+      const lastBrace = cleanContent.lastIndexOf("}");
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
+        cleanContent = cleanContent.substring(firstBrace, lastBrace + 1);
+      }
+
+      const parsed = JSON.parse(cleanContent) as WorkoutPlanPayload;
+      parsed.generated_at = new Date().toISOString();
+      return parsed;
+    } else {
+      let isGemini = apiUrl.includes("generativelanguage.googleapis.com") || model.toLowerCase().includes("gemini");
+      if (isGemini) {
+        // Construct native Gemini URL
+        let finalUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+        finalUrl += `?key=${apiKey}`;
+
+        response = await fetch(finalUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            system_instruction: {
+              parts: [{ text: systemPrompt }]
+            },
+            contents: [{
+              role: "user",
+              parts: [{ text: userPrompt }]
+            }],
+            generationConfig: {
+              responseMimeType: "application/json",
+              temperature: 0.7
+            }
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Gemini API Error ${response.status}: ${errorText}`);
+        }
+
+        const data = await response.json();
+        const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!content) {
+          throw new Error("Gemini API returned empty content.");
+        }
+
+        let cleanContent = content;
+        const firstBrace = cleanContent.indexOf("{");
+        const lastBrace = cleanContent.lastIndexOf("}");
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
+          cleanContent = cleanContent.substring(firstBrace, lastBrace + 1);
+        }
+
+        const parsed = JSON.parse(cleanContent) as WorkoutPlanPayload;
+        parsed.generated_at = new Date().toISOString();
+        return parsed;
       }
 
       response = await fetch(finalUrl, {
@@ -402,11 +484,17 @@ serve(async (req: Request) => {
 
     // Try to parse preferences from body
     let preferences = undefined;
+    let customProvider = undefined;
+    let customModel = undefined;
+    let customKey = undefined;
     try {
       const bodyText = await req.text();
       if (bodyText) {
         const bodyJson = JSON.parse(bodyText);
         preferences = bodyJson.preferences;
+        customProvider = bodyJson.provider;
+        customModel = bodyJson.model;
+        customKey = bodyJson.apiKey;
       }
     } catch (e) {
       console.log("No valid JSON body found, proceeding without explicit preferences.");
@@ -415,7 +503,7 @@ serve(async (req: Request) => {
     // Generate plan — try AI first
     let plan;
     try {
-      plan = await generateWithAI(profile as UserProfile, exercises, recentPlans, preferences);
+      plan = await generateWithAI(profile as UserProfile, exercises, recentPlans, preferences, customProvider, customModel, customKey);
     } catch (e: any) {
       console.log("AI generation failed with error:", e.message);
       return new Response(JSON.stringify({ error: "AI generation failed: " + e.message }), {

@@ -52,7 +52,20 @@ import {
   CheckCircle2,
   Activity,
   Layers,
+  Bot,
+  Cpu,
+  Zap,
+  Eye,
+  EyeOff,
+  AlertCircle,
 } from "lucide-react-native";
+import {
+  getAISettings,
+  saveAISettings,
+  testAIConnection,
+  AISettingsConfig,
+  AIProvider,
+} from "../../lib/ai-service";
 
 // --- Animated Components ---
 
@@ -217,6 +230,51 @@ export default function AdminDashboard() {
     sessionsGrowth: "+8.1%",
     sessionsIsUp: true,
   });
+
+  // --- AI Configuration State ---
+  const [aiConfig, setAiConfig] = useState<AISettingsConfig>({
+    provider: "gemini",
+    geminiModel: "gemini-3.5-flash",
+    geminiApiKey: "",
+    claudeModel: "claude-3-5-haiku-20241022",
+    claudeApiKey: "",
+    temperature: 0.7,
+    maxTokens: 2048,
+    enabled: true,
+  });
+  const [aiModalVisible, setAiModalVisible] = useState(false);
+  const [testingAi, setTestingAi] = useState(false);
+  const [aiTestResult, setAiTestResult] = useState<{ success: boolean; message: string; latencyMs: number } | null>(null);
+  const [savingAi, setSavingAi] = useState(false);
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [showClaudeKey, setShowClaudeKey] = useState(false);
+
+  const handleSaveAISettings = async () => {
+    setSavingAi(true);
+    const result = await saveAISettings(aiConfig);
+    setSavingAi(false);
+    if (result.success) {
+      ToastManager.show("AI Settings Saved", `Active: ${aiConfig.provider === 'gemini' ? 'Google Gemini' : 'Anthropic Claude'}`, "success");
+      setAiModalVisible(false);
+    } else {
+      ToastManager.show("Save Failed", result.error || "Could not save AI settings.", "error");
+    }
+  };
+
+  const handleTestAI = async () => {
+    setTestingAi(true);
+    setAiTestResult(null);
+    const key = aiConfig.provider === "gemini" ? aiConfig.geminiApiKey : aiConfig.claudeApiKey;
+    const model = aiConfig.provider === "gemini" ? aiConfig.geminiModel : aiConfig.claudeModel;
+    const result = await testAIConnection(aiConfig.provider, key, model);
+    setTestingAi(false);
+    setAiTestResult(result);
+    if (result.success) {
+      ToastManager.show("AI Connected", `Latency: ${result.latencyMs}ms`, "success");
+    } else {
+      ToastManager.show("Connection Error", result.message, "error");
+    }
+  };
 
   // Cached records for fast, instantaneous re-aggregations
   const rawReservationsRef = useRef<any[]>([]);
@@ -895,6 +953,9 @@ export default function AdminDashboard() {
       pastYear.setFullYear(today.getFullYear() - 1);
       const pastYearStr = getLocalDateString(pastYear);
 
+      // Fetch AI configuration concurrently with stats
+      getAISettings().then((aiData) => setAiConfig(aiData)).catch(() => {});
+
       const [users, equipment, reservations, sessions, recentRes, allReservations, allSessions, allProfiles] = await Promise.all([
         supabase.from("profiles").select("*", { count: "exact", head: true }),
         supabase.from("equipment").select("id, status, type, name").order("name"),
@@ -1026,6 +1087,32 @@ export default function AdminDashboard() {
               {activeFilterCount > 0 && (
                 <View style={styles.filterBadgeDot} />
               )}
+            </TouchableOpacity>
+
+            {/* AI Engine Status & Quick Config */}
+            <TouchableOpacity
+              style={[
+                styles.actionBtn,
+                {
+                  borderColor: aiConfig.provider === 'claude' ? '#C084FC' : Colors.primary,
+                  backgroundColor: aiConfig.provider === 'claude' ? 'rgba(192, 132, 252, 0.08)' : 'rgba(235, 94, 40, 0.08)',
+                },
+              ]}
+              onPress={() => setAiModalVisible(true)}
+            >
+              {aiConfig.provider === 'claude' ? (
+                <Cpu size={16} color="#C084FC" />
+              ) : (
+                <Zap size={16} color={Colors.primary} />
+              )}
+              <Text
+                style={[
+                  styles.actionBtnText,
+                  { color: aiConfig.provider === 'claude' ? '#C084FC' : Colors.primary, fontWeight: '700' },
+                ]}
+              >
+                AI: {aiConfig.provider === 'claude' ? 'Claude Haiku' : 'Gemini Flash'}
+              </Text>
             </TouchableOpacity>
 
             {/* Sign Out */}
@@ -1236,8 +1323,8 @@ export default function AdminDashboard() {
                       <UserPlus size={20} color={Colors.text} />
                     </View>
                     <View style={styles.actionCardText}>
-                      <Text style={styles.actionCardTitle}>Create your first member</Text>
-                      <Text style={styles.actionCardDesc}>Add yourself or import from CSV</Text>
+                      <Text style={styles.actionCardTitle}>Create member</Text>
+                      <Text style={styles.actionCardDesc}>Add user or import CSV</Text>
                     </View>
                   </Card>
                 </TouchableCard>
@@ -1251,8 +1338,29 @@ export default function AdminDashboard() {
                       <PlusCircle size={20} color={Colors.text} />
                     </View>
                     <View style={styles.actionCardText}>
-                      <Text style={styles.actionCardTitle}>Create a new reservation</Text>
-                      <Text style={styles.actionCardDesc}>Manually book a session for a user</Text>
+                      <Text style={styles.actionCardTitle}>New reservation</Text>
+                      <Text style={styles.actionCardDesc}>Manually book a session</Text>
+                    </View>
+                  </Card>
+                </TouchableCard>
+
+                <TouchableCard
+                  style={[styles.actionCard, { flex: 1 }]}
+                  onPress={() => setAiModalVisible(true)}
+                >
+                  <Card style={styles.actionCardInner}>
+                    <View style={[styles.actionCardIcon, { backgroundColor: aiConfig.provider === 'claude' ? 'rgba(192, 132, 252, 0.15)' : 'rgba(235, 94, 40, 0.15)' }]}>
+                      {aiConfig.provider === 'claude' ? (
+                        <Cpu size={20} color="#C084FC" />
+                      ) : (
+                        <Zap size={20} color={Colors.primary} />
+                      )}
+                    </View>
+                    <View style={styles.actionCardText}>
+                      <Text style={styles.actionCardTitle}>AI Coach Engine</Text>
+                      <Text style={styles.actionCardDesc}>
+                        {aiConfig.provider === 'claude' ? 'Claude Haiku' : 'Gemini Flash'} • Config
+                      </Text>
                     </View>
                   </Card>
                 </TouchableCard>
@@ -1991,6 +2099,255 @@ export default function AdminDashboard() {
           </View>
         </View>
       </Modal>
+
+      {/* ========================================================================= */}
+      {/* AI Engine & Model Configuration Modal */}
+      {/* ========================================================================= */}
+      <Modal
+        visible={aiModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAiModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { maxWidth: 640 }]}>
+            {/* Header */}
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: Radius.md,
+                  backgroundColor: aiConfig.provider === 'claude' ? 'rgba(192, 132, 252, 0.15)' : 'rgba(235, 94, 40, 0.15)',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  {aiConfig.provider === 'claude' ? (
+                    <Cpu size={20} color="#C084FC" />
+                  ) : (
+                    <Zap size={20} color={Colors.primary} />
+                  )}
+                </View>
+                <View>
+                  <Text style={styles.modalTitle}>AI Engine Settings</Text>
+                  <Text style={styles.modalSubtitle}>Configure Gemini & Claude Haiku models & keys</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setAiModalVisible(false)}
+                style={styles.modalCloseBtn}
+              >
+                <X size={20} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+              <View style={{ gap: Spacing.lg }}>
+                {/* Provider Selector */}
+                <View>
+                  <Text style={styles.fieldSectionLabel}>Select Active AI Engine</Text>
+                  <View style={styles.aiProviderRow}>
+                    {/* Gemini Option */}
+                    <TouchableOpacity
+                      style={[
+                        styles.aiProviderCard,
+                        aiConfig.provider === "gemini" && styles.aiProviderCardActive,
+                      ]}
+                      onPress={() => setAiConfig(prev => ({ ...prev, provider: "gemini" }))}
+                    >
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+                        <View style={[styles.aiLogoBox, { backgroundColor: "rgba(235, 94, 40, 0.15)" }]}>
+                          <Zap size={20} color={Colors.primary} />
+                        </View>
+                        {aiConfig.provider === "gemini" && (
+                          <View style={styles.selectedCheck}>
+                            <Check size={12} color="#FFF" />
+                          </View>
+                        )}
+                      </View>
+                      <View>
+                        <Text style={styles.aiProviderName}>Google Gemini</Text>
+                        <Text style={styles.aiProviderSub}>Fast & Cost-Efficient</Text>
+                      </View>
+                      <View style={styles.aiModelTag}>
+                        <Text style={styles.aiModelTagText}>{aiConfig.geminiModel}</Text>
+                      </View>
+                    </TouchableOpacity>
+
+                    {/* Claude Haiku Option */}
+                    <TouchableOpacity
+                      style={[
+                        styles.aiProviderCard,
+                        aiConfig.provider === "claude" && [styles.aiProviderCardActive, { borderColor: "#C084FC", backgroundColor: "rgba(192, 132, 252, 0.08)" }],
+                      ]}
+                      onPress={() => setAiConfig(prev => ({ ...prev, provider: "claude" }))}
+                    >
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+                        <View style={[styles.aiLogoBox, { backgroundColor: "rgba(192, 132, 252, 0.15)" }]}>
+                          <Cpu size={20} color="#C084FC" />
+                        </View>
+                        {aiConfig.provider === "claude" && (
+                          <View style={[styles.selectedCheck, { backgroundColor: "#C084FC" }]}>
+                            <Check size={12} color="#FFF" />
+                          </View>
+                        )}
+                      </View>
+                      <View>
+                        <Text style={styles.aiProviderName}>Claude Haiku</Text>
+                        <Text style={styles.aiProviderSub}>Anthropic 2nd AI</Text>
+                      </View>
+                      <View style={styles.aiModelTag}>
+                        <Text style={styles.aiModelTagText}>Claude 3.5 Haiku</Text>
+                      </View>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Specific Config based on selection */}
+                {aiConfig.provider === "gemini" ? (
+                  <View style={styles.providerConfigBox}>
+                    <Text style={styles.configBoxTitle}>⚡ Google Gemini Details</Text>
+                    
+                    <View style={{ marginTop: Spacing.sm }}>
+                      <Text style={styles.inputLabel}>Gemini Model</Text>
+                      <View style={styles.chipRow}>
+                        {["gemini-3.5-flash", "gemini-3.8-flash", "gemini-2.5-flash"].map((m) => (
+                          <TouchableOpacity
+                            key={m}
+                            style={[styles.modelChip, aiConfig.geminiModel === m && styles.modelChipActive]}
+                            onPress={() => setAiConfig(prev => ({ ...prev, geminiModel: m }))}
+                          >
+                            <Text style={[styles.modelChipText, aiConfig.geminiModel === m && styles.modelChipTextActive]}>
+                              {m} {m === "gemini-3.5-flash" ? "(Recommended)" : ""}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+
+                    <View style={{ marginTop: Spacing.md }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={styles.inputLabel}>Gemini API Key</Text>
+                        <TouchableOpacity onPress={() => setShowGeminiKey(!showGeminiKey)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          {showGeminiKey ? <EyeOff size={14} color={Colors.textTertiary} /> : <Eye size={14} color={Colors.textTertiary} />}
+                          <Text style={{ fontSize: 11, color: Colors.textTertiary }}>{showGeminiKey ? "Hide" : "Reveal"}</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <Input
+                        placeholder="AQ.Ab8RN..."
+                        value={aiConfig.geminiApiKey}
+                        onChangeText={(val) => setAiConfig(prev => ({ ...prev, geminiApiKey: val }))}
+                        secureTextEntry={!showGeminiKey}
+                        containerStyle={{ marginBottom: 0 }}
+                      />
+                      <Text style={styles.keyHint}>Key from Google AI Studio (.env loaded if set).</Text>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.providerConfigBox}>
+                    <Text style={styles.configBoxTitle}>🧠 Anthropic Claude Haiku Details</Text>
+                    
+                    <View style={{ marginTop: Spacing.sm }}>
+                      <Text style={styles.inputLabel}>Claude Model</Text>
+                      <View style={styles.chipRow}>
+                        {["claude-3-5-haiku-20241022", "claude-3-haiku-20240307"].map((m) => (
+                          <TouchableOpacity
+                            key={m}
+                            style={[styles.modelChip, aiConfig.claudeModel === m && styles.modelChipActive]}
+                            onPress={() => setAiConfig(prev => ({ ...prev, claudeModel: m }))}
+                          >
+                            <Text style={[styles.modelChipText, aiConfig.claudeModel === m && styles.modelChipTextActive]}>
+                              {m === "claude-3-5-haiku-20241022" ? "Claude 3.5 Haiku (Latest)" : "Claude 3 Haiku"}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+
+                    <View style={{ marginTop: Spacing.md }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={styles.inputLabel}>Anthropic API Key</Text>
+                        <TouchableOpacity onPress={() => setShowClaudeKey(!showClaudeKey)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          {showClaudeKey ? <EyeOff size={14} color={Colors.textTertiary} /> : <Eye size={14} color={Colors.textTertiary} />}
+                          <Text style={{ fontSize: 11, color: Colors.textTertiary }}>{showClaudeKey ? "Hide" : "Reveal"}</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <Input
+                        placeholder="sk-ant-api03-..."
+                        value={aiConfig.claudeApiKey}
+                        onChangeText={(val) => setAiConfig(prev => ({ ...prev, claudeApiKey: val }))}
+                        secureTextEntry={!showClaudeKey}
+                        containerStyle={{ marginBottom: 0 }}
+                      />
+                      <Text style={styles.keyHint}>Key from console.anthropic.com.</Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* Creativity Preset */}
+                <View>
+                  <Text style={styles.inputLabel}>Creativity & Temperature</Text>
+                  <View style={styles.chipRow}>
+                    {[
+                      { val: 0.2, label: "0.2 — Strict" },
+                      { val: 0.7, label: "0.7 — Balanced" },
+                      { val: 1.0, label: "1.0 — High Variety" },
+                    ].map((item) => (
+                      <TouchableOpacity
+                        key={item.val}
+                        style={[styles.modelChip, aiConfig.temperature === item.val && styles.modelChipActive]}
+                        onPress={() => setAiConfig(prev => ({ ...prev, temperature: item.val }))}
+                      >
+                        <Text style={[styles.modelChipText, aiConfig.temperature === item.val && styles.modelChipTextActive]}>
+                          {item.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+
+                {/* Test Connection Result */}
+                {aiTestResult && (
+                  <View style={[
+                    styles.testResultBanner, 
+                    aiTestResult.success ? styles.testResultSuccess : styles.testResultError
+                  ]}>
+                    {aiTestResult.success ? (
+                      <CheckCircle2 size={16} color={Colors.success} />
+                    ) : (
+                      <AlertCircle size={16} color={Colors.error} />
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.testResultTitle, aiTestResult.success ? { color: Colors.success } : { color: Colors.error }]}>
+                        {aiTestResult.success ? `Connected in ${aiTestResult.latencyMs}ms!` : "Connection Failed"}
+                      </Text>
+                      <Text style={styles.testResultDesc}>{aiTestResult.message}</Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+            </ScrollView>
+
+            {/* Actions */}
+            <View style={[styles.modalActionsRow, { marginTop: Spacing.md }]}>
+              <Button
+                title={testingAi ? "Testing..." : "Test Connection"}
+                variant="outline"
+                onPress={handleTestAI}
+                loading={testingAi}
+                style={{ flex: 1 }}
+              />
+              <Button
+                title={savingAi ? "Saving..." : "Save AI Settings"}
+                variant="primary"
+                onPress={handleSaveAISettings}
+                loading={savingAi}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -2682,5 +3039,130 @@ const styles = StyleSheet.create({
   slotTextBooked: {
     color: Colors.textTertiary,
     textDecorationLine: "line-through",
+  },
+  /* --- AI Configuration Modal Styles --- */
+  modalBody: {
+    maxHeight: 480,
+  },
+  fieldSectionLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+    marginBottom: 8,
+  },
+  aiProviderRow: {
+    flexDirection: "row",
+    gap: Spacing.md,
+  },
+  aiProviderCard: {
+    flex: 1,
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+  },
+  aiProviderCardActive: {
+    borderColor: Colors.primary,
+    backgroundColor: "rgba(251, 191, 36, 0.08)",
+  },
+  aiLogoBox: {
+    width: 36,
+    height: 36,
+    borderRadius: Radius.md,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  aiProviderName: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.text,
+  },
+  aiProviderSub: {
+    fontSize: 11,
+    color: Colors.textTertiary,
+  },
+  selectedCheck: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: Colors.primary,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  aiModelTag: {
+    backgroundColor: "rgba(255,255,255,0.04)",
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: Radius.sm,
+    alignSelf: "flex-start",
+  },
+  aiModelTagText: {
+    fontSize: 10,
+    color: Colors.textSecondary,
+    fontFamily: Platform.OS === "web" ? "monospace" : undefined,
+  },
+  providerConfigBox: {
+    backgroundColor: "rgba(255,255,255,0.02)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    borderRadius: Radius.lg,
+    padding: Spacing.md,
+  },
+  configBoxTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.text,
+  },
+  keyHint: {
+    fontSize: 11,
+    color: Colors.textTertiary,
+    marginTop: 4,
+  },
+  modelChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  modelChipActive: {
+    borderColor: Colors.primary,
+    backgroundColor: "rgba(251, 191, 36, 0.15)",
+  },
+  modelChipText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+  },
+  modelChipTextActive: {
+    color: Colors.primary,
+  },
+  testResultBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: Spacing.sm,
+    padding: Spacing.sm,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+  },
+  testResultSuccess: {
+    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    borderColor: "rgba(16, 185, 129, 0.3)",
+  },
+  testResultError: {
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    borderColor: "rgba(239, 68, 68, 0.3)",
+  },
+  testResultTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  testResultDesc: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    marginTop: 2,
   },
 });
