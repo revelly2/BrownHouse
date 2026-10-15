@@ -12,6 +12,7 @@ import React, {
   PropsWithChildren,
 } from "react";
 import { Session, User, AuthError } from "@supabase/supabase-js";
+import { router } from "expo-router";
 import { supabase } from "./supabase";
 import { Profile, UserRole } from "./types";
 
@@ -131,6 +132,19 @@ export function AuthProvider({ children }: PropsWithChildren) {
           loading: false,
           initialized: true,
         });
+      } else if (event === "PASSWORD_RECOVERY") {
+        if (session?.user) {
+          const profile = await fetchProfile(session.user.id);
+          setState({
+            session,
+            user: session.user,
+            profile,
+            role: profile?.role ?? null,
+            loading: false,
+            initialized: true,
+          });
+        }
+        router.replace("/(auth)/reset-password");
       } else if (event === "SIGNED_OUT") {
         setState({
           session: null,

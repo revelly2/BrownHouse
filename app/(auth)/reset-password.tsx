@@ -102,8 +102,18 @@ export default function ResetPasswordScreen() {
           {success ? (
             <View style={{ gap: Spacing.md, marginTop: Spacing.lg }}>
               <Button
-                title="Back to Login"
-                onPress={() => router.replace("/(auth)/login")}
+                title="Go to Dashboard"
+                onPress={() => router.replace("/")}
+                size="lg"
+                fullWidth
+              />
+              <Button
+                title="Sign Out & Return to Login"
+                variant="outline"
+                onPress={async () => {
+                  await supabase.auth.signOut();
+                  router.replace("/(auth)/login");
+                }}
                 size="lg"
                 fullWidth
               />

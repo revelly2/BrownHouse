@@ -41,6 +41,16 @@ export default function AdminLayout() {
   const { session, initialized } = useAuth();
 
   useEffect(() => {
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      if (
+        window.location.hash.includes("type=recovery") ||
+        window.location.search.includes("type=recovery")
+      ) {
+        router.replace("/(auth)/reset-password");
+        return;
+      }
+    }
+
     if (initialized && !session) {
       router.replace("/(auth)/login");
     }

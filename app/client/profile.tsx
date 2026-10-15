@@ -12,6 +12,7 @@ import {
   Platform,
   Image,
   TouchableOpacity,
+  Modal,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
@@ -32,6 +33,11 @@ export default function ProfileScreen() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [updatingPhoto, setUpdatingPhoto] = useState(false);
+  const [passwordModalVisible, setPasswordModalVisible] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const [form, setForm] = useState({
     first_name: profile?.first_name ?? "",
     last_name: profile?.last_name ?? "",
@@ -199,6 +205,39 @@ export default function ProfileScreen() {
           onPress: performSignOut,
         },
       ]);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    setPasswordError(null);
+    if (!newPassword) {
+      setPasswordError("Password is required");
+      return;
+    }
+    if (newPassword.length < 6) {
+      setPasswordError("Minimum 6 characters required");
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setPasswordError("Passwords do not match");
+      return;
+    }
+
+    setPasswordLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) {
+        setPasswordError(error.message);
+      } else {
+        Alert.alert("Success", "Password updated successfully!");
+        setPasswordModalVisible(false);
+        setNewPassword("");
+        setConfirmNewPassword("");
+      }
+    } catch (err: any) {
+      setPasswordError(err.message || "An unexpected error occurred.");
+    } finally {
+      setPasswordLoading(false);
     }
   };
 
@@ -438,6 +477,29 @@ export default function ProfileScreen() {
         />
       </Card>
 
+      {/* Password & Security Card */}
+      <Card variant="glass" style={{ padding: Spacing.lg, marginBottom: Spacing.lg }}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+          <View style={{ flex: 1, marginRight: Spacing.md }}>
+            <Text style={{ fontSize: 16, fontWeight: "600", color: Colors.light.text }}>Password & Security</Text>
+            <Text style={{ fontSize: 12, color: Colors.light.textSecondary, marginTop: 2 }}>
+              Update your account password
+            </Text>
+          </View>
+          <Button
+            title="Change Password"
+            variant="outline"
+            size="sm"
+            onPress={() => {
+              setPasswordError(null);
+              setNewPassword("");
+              setConfirmNewPassword("");
+              setPasswordModalVisible(true);
+            }}
+          />
+        </View>
+      </Card>
+
       {/* Sign Out */}
       <TouchableOpacity
         style={styles.signOutBtn}
@@ -446,6 +508,61 @@ export default function ProfileScreen() {
       >
         <Text style={styles.signOutBtnText}>Sign Out</Text>
       </TouchableOpacity>
+
+      {/* Change Password Modal */}
+      <Modal
+        visible={passwordModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPasswordModalVisible(false)}
+      >
+        <View style={modalStyles.overlay}>
+          <View style={modalStyles.card}>
+            <Text style={modalStyles.title}>Change Password</Text>
+            <Text style={modalStyles.subtitle}>
+              Enter a new secure password for your account (minimum 6 characters).
+            </Text>
+
+            {passwordError && (
+              <View style={modalStyles.errorBanner}>
+                <Text style={modalStyles.errorText}>{passwordError}</Text>
+              </View>
+            )}
+
+            <View style={{ gap: Spacing.sm, marginTop: Spacing.md }}>
+              <Input
+                label="New Password"
+                placeholder="Enter new password"
+                secureTextEntry
+                value={newPassword}
+                onChangeText={setNewPassword}
+              />
+              <Input
+                label="Confirm New Password"
+                placeholder="Repeat new password"
+                secureTextEntry
+                value={confirmNewPassword}
+                onChangeText={setConfirmNewPassword}
+              />
+            </View>
+
+            <View style={modalStyles.actions}>
+              <Button
+                title="Cancel"
+                variant="outline"
+                onPress={() => setPasswordModalVisible(false)}
+                style={{ flex: 1 }}
+              />
+              <Button
+                title="Save Password"
+                loading={passwordLoading}
+                onPress={handleChangePassword}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Official Receipt Modal */}
       <ReceiptModal
@@ -690,5 +807,60 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: Colors.error,
     letterSpacing: 0.5,
+  },
+});
+
+const modalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing.xl,
+  },
+  card: {
+    width: "100%",
+    maxWidth: 440,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.xl,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    padding: Spacing["2xl"],
+    ...Platform.select({
+      web: {
+        boxShadow: "0px 20px 40px rgba(0,0,0,0.6)",
+      } as any,
+    }),
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: Colors.light.text,
+    textAlign: "center",
+  },
+  subtitle: {
+    fontSize: 13,
+    color: Colors.light.textSecondary,
+    textAlign: "center",
+    marginTop: 6,
+    lineHeight: 18,
+  },
+  errorBanner: {
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.3)",
+    padding: Spacing.sm,
+    borderRadius: Radius.md,
+    marginTop: Spacing.md,
+  },
+  errorText: {
+    color: Colors.error || "#EF4444",
+    fontSize: 12,
+    textAlign: "center",
+  },
+  actions: {
+    flexDirection: "row",
+    gap: Spacing.md,
+    marginTop: Spacing.xl,
   },
 });

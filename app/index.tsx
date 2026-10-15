@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { View, StyleSheet, Animated, Image } from "react-native";
+import { View, StyleSheet, Animated, Image, Platform } from "react-native";
 import { Redirect } from "expo-router";
 import { useAuth } from "../lib/auth";
 import { Colors } from "../constants/colors";
@@ -7,6 +7,13 @@ import { Colors } from "../constants/colors";
 export default function Index() {
   const { session, role, loading, initialized } = useAuth();
   const pulseAnim = useRef(new Animated.Value(0.9)).current;
+
+  // Check if user arrived via Supabase Password Recovery link
+  const isPasswordRecovery =
+    Platform.OS === "web" &&
+    typeof window !== "undefined" &&
+    (window.location.hash.includes("type=recovery") ||
+      window.location.search.includes("type=recovery"));
 
   useEffect(() => {
     if (!initialized || loading) {
@@ -26,6 +33,10 @@ export default function Index() {
       ).start();
     }
   }, [initialized, loading]);
+
+  if (isPasswordRecovery) {
+    return <Redirect href="/(auth)/reset-password" />;
+  }
 
   // Show loading spinner while initializing
   if (!initialized || loading) {
