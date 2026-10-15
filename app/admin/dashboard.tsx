@@ -1021,13 +1021,15 @@ export default function AdminDashboard() {
   const rightColumnWidth = 320;
   const columnGap = Spacing["3xl"]; // 40
 
-  let calculatedChartWidth = width - paddingHorizontal;
+  const availableScreenWidth = isDesktop ? Math.max(320, width - 250) : width;
+  let calculatedChartWidth = availableScreenWidth - paddingHorizontal;
   if (calculatedChartWidth > contentMaxWidth - paddingHorizontal) {
     calculatedChartWidth = contentMaxWidth - paddingHorizontal;
   }
   if (isDesktop) {
     calculatedChartWidth = calculatedChartWidth - rightColumnWidth - columnGap;
   }
+  calculatedChartWidth = Math.max(260, calculatedChartWidth);
 
   const currentMetricTotal = weeklyTrend.data.reduce((acc, curr) => acc + curr, 0);
   const currentMetricAvg = weeklyTrend.data.length > 0 ? (currentMetricTotal / weeklyTrend.data.length).toFixed(1) : "0.0";

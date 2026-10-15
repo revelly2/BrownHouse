@@ -14,6 +14,7 @@ import {
   Alert,
   Dimensions,
   TouchableOpacity,
+  useWindowDimensions,
 } from "react-native";
 import { LineChart } from "react-native-chart-kit";
 import * as SecureStore from "expo-secure-store";
@@ -171,6 +172,11 @@ const ActiveReservationCard = ({
 
 export default function ClientDashboard() {
   const { profile } = useAuth();
+  const { width } = useWindowDimensions();
+  const isDesktop = Platform.OS === "web" && width >= 1024;
+  const availableScreenWidth = isDesktop ? Math.min(width - 250, 1024) : width;
+  const chartWidth = Math.max(260, availableScreenWidth - Spacing.xl * 2 - Spacing.md * 2);
+
   const [upcomingReservations, setUpcomingReservations] = useState<Reservation[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -657,7 +663,7 @@ export default function ClientDashboard() {
             <>
               <LineChart
                 data={prepareChartData()!}
-                width={Dimensions.get("window").width - Spacing.xl * 2 - Spacing.md * 2}
+                width={chartWidth}
                 height={220}
                 chartConfig={{
                   backgroundColor: "transparent",
