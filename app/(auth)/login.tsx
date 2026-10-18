@@ -550,12 +550,16 @@ const styles = StyleSheet.create({
     color: Colors.text,
     marginBottom: Spacing.xs,
     textAlign: "center",
+    letterSpacing: Typography.letterSpacing.tight,
+    fontFamily: Typography.fontFamily.sans,
   },
   subtitle: {
     fontSize: Typography.fontSize.base,
     color: Colors.textSecondary,
     lineHeight: Typography.fontSize.base * Typography.lineHeight.normal,
     textAlign: "center",
+    fontFamily: Typography.fontFamily.sans,
+    letterSpacing: Typography.letterSpacing.normal,
   },
   form: {
     width: "100%",
@@ -585,16 +589,18 @@ const styles = StyleSheet.create({
   divider: {
     flex: 1,
     height: 1,
-    backgroundColor: Colors.border,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
   },
   dividerText: {
     color: Colors.textTertiary,
     paddingHorizontal: Spacing.md,
     fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.sans,
   },
   googleButton: {
-    borderColor: Colors.border,
-    backgroundColor: Colors.surface,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    borderTopColor: "rgba(255, 255, 255, 0.18)",
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
   },
   footer: {
     flexDirection: "row",
@@ -604,16 +610,18 @@ const styles = StyleSheet.create({
   footerText: {
     fontSize: Typography.fontSize.sm,
     color: Colors.textSecondary,
+    fontFamily: Typography.fontFamily.sans,
   },
   footerLink: {
     fontSize: Typography.fontSize.sm,
     color: Colors.primary,
     fontWeight: "700",
+    fontFamily: Typography.fontFamily.sans,
   },
   errorBanner: {
-    backgroundColor: "rgba(255, 107, 107, 0.12)",
-    borderWidth: 1.5,
-    borderColor: Colors.error,
+    backgroundColor: "rgba(239, 68, 68, 0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.28)",
     borderRadius: Radius.md,
     padding: Spacing.md,
     marginBottom: Spacing.base,
@@ -623,10 +631,11 @@ const styles = StyleSheet.create({
     color: Colors.error,
     fontWeight: "600",
     textAlign: "center",
+    fontFamily: Typography.fontFamily.sans,
   },
   rightColumn: {
     flex: 1,
-    backgroundColor: "#5B42A4", // Default Purple brand color
+    backgroundColor: "#111215",
     overflow: 'hidden',
   },
   coverImage: {
@@ -637,13 +646,14 @@ const styles = StyleSheet.create({
   },
   coverOverlay: {
     ...(StyleSheet.absoluteFill as object),
-    backgroundColor: "rgba(0,0,0,0.2)",
+    backgroundColor: "rgba(0,0,0,0.35)",
   },
   fallbackCover: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: Spacing["3xl"],
+    backgroundColor: "#111215",
   },
   fallbackCoverText: {
     fontSize: 24,
@@ -651,12 +661,15 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     marginTop: Spacing.xl,
     textAlign: 'center',
+    fontFamily: Typography.fontFamily.sans,
+    letterSpacing: Typography.letterSpacing.tight,
   },
   fallbackCoverSub: {
     fontSize: 16,
-    color: "rgba(255,255,255,0.8)",
+    color: "rgba(255,255,255,0.7)",
     marginTop: Spacing.sm,
     textAlign: 'center',
+    fontFamily: Typography.fontFamily.sans,
   },
 
   /* --- Forgot Password Modal --- */
@@ -666,19 +679,28 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: Spacing.lg,
+    ...Platform.select({
+      web: {
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+      } as any,
+    }),
   },
   modalCard: {
     width: "100%",
     maxWidth: 440,
-    backgroundColor: Colors.surface,
+    backgroundColor: "rgba(20, 20, 24, 0.88)",
     borderRadius: Radius.xl,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    borderTopColor: "rgba(255, 255, 255, 0.22)",
     padding: Spacing.xl,
     gap: Spacing.md,
     ...Platform.select({
       web: {
-        boxShadow: "0px 20px 40px rgba(0,0,0,0.6)",
+        backdropFilter: "blur(28px) saturate(190%)",
+        WebkitBackdropFilter: "blur(28px) saturate(190%)",
+        boxShadow: "0 24px 48px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.15)",
       } as any,
     }),
   },
@@ -691,19 +713,22 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "700",
     color: Colors.text,
+    fontFamily: Typography.fontFamily.sans,
+    letterSpacing: Typography.letterSpacing.tight,
   },
   modalSubtitle: {
     fontSize: 13,
     color: Colors.textSecondary,
     marginTop: 4,
     lineHeight: 18,
+    fontFamily: Typography.fontFamily.sans,
   },
   modalCloseBtn: {
     padding: 6,
     borderRadius: Radius.sm,
-    backgroundColor: Colors.surfaceElevated,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: "rgba(255, 255, 255, 0.12)",
   },
   modalErrorBanner: {
     backgroundColor: "rgba(239, 68, 68, 0.1)",

@@ -606,7 +606,7 @@ export default function MembershipsScreen() {
                           {/* Action Buttons */}
                           <View style={styles.cardActionsRow}>
                             <Button
-                              title="📄 View Receipt"
+                              title="View Receipt"
                               variant="outline"
                               size="sm"
                               onPress={() => viewReceiptForActiveMember(item)}
@@ -677,7 +677,7 @@ export default function MembershipsScreen() {
                               <Text style={styles.paymentStatusText}>✓ Completed</Text>
                             </View>
                             <Button
-                              title="📄 Receipt"
+                              title="Receipt"
                               variant="outline"
                               size="sm"
                               onPress={() => viewReceiptForPayment(p)}
@@ -743,7 +743,7 @@ export default function MembershipsScreen() {
                               style={styles.actionBtn}
                             />
                             <Button
-                              title="📄 View Receipt"
+                              title="View Receipt"
                               variant="outline"
                               size="sm"
                               onPress={() => viewReceiptForActiveMember(item)}

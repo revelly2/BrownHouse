@@ -23,14 +23,20 @@ import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Equipment } from "../../lib/types";
 import { Colors, Spacing, Typography, Radius } from "../../constants/colors";
+import { parseEquipmentDetails, buildEquipmentPayload } from "../../lib/equipment-utils";
+import { EquipmentDetailsModal } from "../../components/equipment/EquipmentDetailsModal";
+import { Icon } from "../../components/ui/Icon";
 
 export default function EquipmentManageScreen() {
   const [equipment, setEquipment] = useState<Equipment[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
+  const [detailsModalVisible, setDetailsModalVisible] = useState(false);
+  const [selectedDetailsEquipment, setSelectedDetailsEquipment] = useState<Equipment | null>(null);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+
   const [form, setForm] = useState({
     name: "",
     type: "strength" as "cardio" | "strength",
@@ -38,6 +44,11 @@ export default function EquipmentManageScreen() {
     model_number: "",
     description: "",
     muscle_group: "",
+    location: "",
+    image_url: "",
+    specs: "",
+    instructions: "",
+    safety_notes: "",
   });
 
   const fetchEquipment = async () => {
@@ -72,14 +83,7 @@ export default function EquipmentManageScreen() {
 
     setSaving(true);
     
-    const payload = {
-      name: form.name,
-      type: form.type,
-      brand: form.brand || null,
-      model_number: form.model_number || null,
-      description: form.description || null,
-      muscle_group: form.muscle_group || null,
-    };
+    const payload = buildEquipmentPayload(form);
 
     let error;
 
@@ -107,14 +111,20 @@ export default function EquipmentManageScreen() {
   };
 
   const openModalForEdit = (item: Equipment) => {
+    const details = parseEquipmentDetails(item);
     setEditingId(item.id);
     setForm({
       name: item.name,
       type: item.type as "cardio" | "strength",
       brand: item.brand || "",
       model_number: item.model_number || "",
-      description: item.description || "",
+      description: details.summary !== "No description provided." ? details.summary : "",
       muscle_group: item.muscle_group || "",
+      location: details.location || "",
+      image_url: details.image_url || "",
+      specs: details.specs || "",
+      instructions: details.instructions || "",
+      safety_notes: details.safety_notes || "",
     });
     setModalVisible(true);
   };
@@ -128,6 +138,11 @@ export default function EquipmentManageScreen() {
       model_number: "",
       description: "",
       muscle_group: "",
+      location: "",
+      image_url: "",
+      specs: "",
+      instructions: "",
+      safety_notes: "",
     });
     setModalVisible(true);
   };
@@ -190,7 +205,9 @@ export default function EquipmentManageScreen() {
     }
   };
 
-  const renderItem = ({ item }: { item: Equipment }) => (
+  const renderItem = ({ item }: { item: Equipment }) => {
+    const details = parseEquipmentDetails(item);
+    return (
     <Card variant="glass" style={styles.card}>
       <View style={styles.cardHeader}>
         <View style={styles.cardInfo}>
@@ -229,6 +246,33 @@ export default function EquipmentManageScreen() {
             <Text style={styles.infoChipText}>{item.muscle_group}</Text>
           </View>
         )}
+        {details.location && (
+          <View style={[styles.infoChip, { backgroundColor: "rgba(251, 191, 36, 0.08)", borderColor: "rgba(251, 191, 36, 0.22)", flexDirection: "row", alignItems: "center", gap: 4 }]}>
+            <Icon name="pin" size={12} color={Colors.primary} />
+            <Text style={[styles.infoChipText, { color: Colors.primary }]}>
+              {details.location}
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {details.summary ? (
+        <Text style={styles.cardDescription} numberOfLines={2}>
+          {details.summary}
+        </Text>
+      ) : null}
+
+      <View style={styles.viewDetailsRow}>
+        <TouchableOpacity
+          onPress={() => {
+            setSelectedDetailsEquipment(item);
+            setDetailsModalVisible(true);
+          }}
+          style={styles.detailsLink}
+          activeOpacity={0.65}
+        >
+          <Text style={styles.detailsText}>View Details →</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.cardActions}>
@@ -267,7 +311,8 @@ export default function EquipmentManageScreen() {
         </TouchableOpacity>
       </View>
     </Card>
-  );
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -375,11 +420,50 @@ export default function EquipmentManageScreen() {
                 value={form.muscle_group}
                 onChangeText={(v) => setForm({ ...form, muscle_group: v })}
               />
+
               <Input
-                label="Description"
-                placeholder="Equipment description..."
+                label="Location / Zone"
+                placeholder="e.g., Free Weight Area, Cardio Zone, Rack 2"
+                value={form.location}
+                onChangeText={(v) => setForm({ ...form, location: v })}
+              />
+
+              <Input
+                label="Image URL"
+                placeholder="https://images.unsplash.com/..."
+                value={form.image_url}
+                onChangeText={(v) => setForm({ ...form, image_url: v })}
+              />
+
+              <Input
+                label="Description / Overview"
+                placeholder="Equipment overview..."
                 value={form.description}
                 onChangeText={(v) => setForm({ ...form, description: v })}
+                multiline
+              />
+
+              <Input
+                label="Specifications & Capacity"
+                placeholder="e.g., Weight Range: 5-100 lbs (Pairs), Max Load 450 lbs, Dimensions"
+                value={form.specs}
+                onChangeText={(v) => setForm({ ...form, specs: v })}
+                multiline
+              />
+
+              <Input
+                label="How to Use / Instructions"
+                placeholder="e.g., 1. Adjust seat height. 2. Select appropriate weight pin. 3. Maintain tight core..."
+                value={form.instructions}
+                onChangeText={(v) => setForm({ ...form, instructions: v })}
+                multiline
+              />
+
+              <Input
+                label="Safety Guidelines & Precautions"
+                placeholder="e.g., Always use collars. Re-rack weights after use. Wipe down handles..."
+                value={form.safety_notes}
+                onChangeText={(v) => setForm({ ...form, safety_notes: v })}
                 multiline
               />
 
@@ -402,6 +486,21 @@ export default function EquipmentManageScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Equipment Details Preview Sheet */}
+      <EquipmentDetailsModal
+        visible={detailsModalVisible}
+        equipment={selectedDetailsEquipment}
+        isAdmin={true}
+        onClose={() => {
+          setDetailsModalVisible(false);
+          setSelectedDetailsEquipment(null);
+        }}
+        onEdit={(eq) => {
+          setDetailsModalVisible(false);
+          openModalForEdit(eq);
+        }}
+      />
     </View>
   );
 }
@@ -526,6 +625,25 @@ const styles = StyleSheet.create({
     color: Colors.light.textTertiary,
     fontWeight: "500",
     textTransform: "capitalize",
+  },
+  cardDescription: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.light.textTertiary,
+    lineHeight: Typography.fontSize.sm * Typography.lineHeight.normal,
+    marginBottom: Spacing.sm,
+  },
+  viewDetailsRow: {
+    marginBottom: Spacing.sm,
+  },
+  detailsLink: {
+    paddingVertical: 2,
+    alignSelf: 'flex-start',
+  },
+  detailsText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.primary,
+    fontWeight: "600",
+    letterSpacing: 0.2,
   },
   cardActions: {
     flexDirection: "row",

@@ -42,6 +42,10 @@ export interface Equipment {
   image_url: string | null;
   muscle_group: string | null;
   status: EquipmentStatus;
+  instructions?: string | null;
+  safety_notes?: string | null;
+  specs?: string | null;
+  location?: string | null;
   created_at: string;
   updated_at: string;
 }

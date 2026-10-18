@@ -13,7 +13,10 @@ import {
   Modal,
   TouchableOpacity,
   Platform,
+  Image,
+  useWindowDimensions,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
 import { router } from "expo-router";
@@ -21,10 +24,12 @@ import { Card } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Colors, Spacing, Typography, Radius } from "../../constants/colors";
+import { LinearGradient } from "expo-linear-gradient";
 import { WorkoutPlan, CompletedSession } from "../../lib/types";
 import { ToastManager } from "../../components/ui/Toast";
 import { Play, Check, ChevronDown, ChevronUp, Trash2, Zap, Cpu, Sparkles, Bot } from "lucide-react-native";
 import { getAISettings, generateWorkoutPlan, generateFITTFallbackPlan, AIProvider } from "../../lib/ai-service";
+import { AthleteRunnerVector, KettlebellVector } from "../../components/ui/AthleteVectors";
 
 // ─────────────────────────────────────────────
 // Wizard config
@@ -41,50 +46,46 @@ const WIZARD_STEPS = [
   {
     key: "goal",
     question: "What's your main fitness goal?",
-    emoji: "🎯",
     subtitle: "We'll tailor the plan around this.",
     options: [
-      { label: "Build Muscle", emoji: "💪" },
-      { label: "Lose Weight", emoji: "🔥" },
-      { label: "Improve Endurance", emoji: "🏃" },
-      { label: "Increase Strength", emoji: "🏋️" },
-      { label: "Stay Active", emoji: "⚡" },
+      { label: "Build Muscle" },
+      { label: "Lose Weight" },
+      { label: "Improve Endurance" },
+      { label: "Increase Strength" },
+      { label: "Stay Active" },
     ],
   },
   {
     key: "level",
     question: "What's your experience level?",
-    emoji: "📊",
     subtitle: "Be honest — we'll match the intensity to you.",
     options: [
-      { label: "Beginner", emoji: "🌱" },
-      { label: "Intermediate", emoji: "⚡" },
-      { label: "Advanced", emoji: "🔱" },
+      { label: "Beginner" },
+      { label: "Intermediate" },
+      { label: "Advanced" },
     ],
   },
   {
     key: "daysPerWeek",
     question: "How many days per week can you train?",
-    emoji: "📅",
     subtitle: "Consistency beats perfection.",
     options: [
-      { label: "2 days", emoji: "2️⃣" },
-      { label: "3 days", emoji: "3️⃣" },
-      { label: "4 days", emoji: "4️⃣" },
-      { label: "5 days", emoji: "5️⃣" },
-      { label: "6 days", emoji: "6️⃣" },
+      { label: "2 days" },
+      { label: "3 days" },
+      { label: "4 days" },
+      { label: "5 days" },
+      { label: "6 days" },
     ],
   },
   {
     key: "sessionLength",
     question: "How long is each session?",
-    emoji: "⏱️",
     subtitle: "Choose what fits your schedule.",
     options: [
-      { label: "30 minutes", emoji: "🕧" },
-      { label: "45 minutes", emoji: "🕧" },
-      { label: "1 hour", emoji: "🕐" },
-      { label: "1.5 hours", emoji: "🕑" },
+      { label: "30 minutes" },
+      { label: "45 minutes" },
+      { label: "1 hour" },
+      { label: "1.5 hours" },
     ],
   },
 ] as const;
@@ -163,6 +164,10 @@ interface UIWorkoutPlan extends WorkoutPlan {
 
 export default function WorkoutsScreen() {
   const { profile, user } = useAuth();
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const isMobile = width < 600;
+  const horizontalPadding = isMobile ? Spacing.md : Spacing.xl;
   const [plans, setPlans] = useState<UIWorkoutPlan[]>([]);
   const [sessions, setSessions] = useState<CompletedSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -178,8 +183,8 @@ export default function WorkoutsScreen() {
   const [exerciseTimings, setExerciseTimings] = useState<Record<string, number>>({});
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
 
-  // ── AI Engine Selection (Gemini vs Claude Haiku) ──
-  const [selectedAiProvider, setSelectedAiProvider] = useState<AIProvider>("gemini");
+  // ── AI Engine Selection (Google Gemini) ──
+  const selectedAiProvider: AIProvider = "gemini";
 
   // ── Wizard state ──
   const [showWizard, setShowWizard] = useState(false);
@@ -233,11 +238,6 @@ export default function WorkoutsScreen() {
 
   useEffect(() => {
     fetchData();
-    getAISettings()
-      .then((cfg) => {
-        if (cfg?.provider) setSelectedAiProvider(cfg.provider);
-      })
-      .catch(() => {});
   }, [profile]);
 
   const onRefresh = async () => {
@@ -247,7 +247,7 @@ export default function WorkoutsScreen() {
   };
 
   // ─────────────────────────────────────────────
-  // AI Plan Generator (Gemini & Claude Haiku Support)
+  // AI Plan Generator (Google Gemini Engine)
   // ─────────────────────────────────────────────
 
   const generateAIPlan = async (preferences?: WizardAnswers) => {
@@ -299,10 +299,9 @@ export default function WorkoutsScreen() {
           return;
         }
 
-        const providerLabel = (plan.ai_provider || selectedAiProvider) === "claude" ? "Claude 3.5 Haiku" : "Gemini 3.5 Flash";
         const planName = plan.plan_name?.includes("AI") 
           ? plan.plan_name 
-          : `${plan.plan_name || plan.goal} (${providerLabel})`;
+          : `${plan.plan_name || plan.goal} (Gemini AI)`;
 
         const { data: planData, error: planError } = await supabase
           .from("workout_plans")
@@ -350,7 +349,7 @@ export default function WorkoutsScreen() {
           }
         }
 
-        showAlert("Success", `AI Plan generated with ${providerLabel}!`);
+        showAlert("Success", "AI Plan generated with Google Gemini!");
         fetchData();
       } else {
         showAlert("Error", plan?.error ?? "Failed to generate plan exercises.");
@@ -572,7 +571,14 @@ export default function WorkoutsScreen() {
     <>
       <ScrollView
         style={styles.container}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          {
+            paddingHorizontal: horizontalPadding,
+            paddingTop: isMobile ? Spacing["2xl"] + 12 : Spacing["4xl"],
+            paddingBottom: Math.max(105, 80 + insets.bottom),
+          },
+        ]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
@@ -586,99 +592,80 @@ export default function WorkoutsScreen() {
         </View>
 
         {/* Create & AI Card */}
-        <Card variant="glassElevated" style={styles.aiCard}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm, flexWrap: 'wrap', gap: 8 }}>
-            <Text style={styles.aiTitle}>Build Your Workout Plan</Text>
-            <View style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 5,
-              backgroundColor: selectedAiProvider === 'claude' ? 'rgba(192, 132, 252, 0.12)' : 'rgba(235, 94, 40, 0.12)',
-              paddingHorizontal: 10,
-              paddingVertical: 4,
-              borderRadius: Radius.full,
-              borderWidth: 1,
-              borderColor: selectedAiProvider === 'claude' ? 'rgba(192, 132, 252, 0.3)' : 'rgba(235, 94, 40, 0.3)'
-            }}>
-              {selectedAiProvider === 'claude' ? <Cpu size={13} color="#C084FC" /> : <Zap size={13} color={Colors.primary} />}
-              <Text style={{ fontSize: 11, fontWeight: '700', color: selectedAiProvider === 'claude' ? '#C084FC' : Colors.primary }}>
-                {selectedAiProvider === 'claude' ? 'Claude 3.5 Haiku Active' : 'Gemini Flash-Lite Active'}
-              </Text>
+        <Card variant="glassElevated" style={[styles.aiCard, { position: "relative", overflow: "hidden" }, isMobile && { padding: Spacing.lg }]}>
+          <View style={{ zIndex: 2, maxWidth: 640 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm, flexWrap: 'wrap', gap: 8 }}>
+              <Text style={styles.aiTitle}>Build Your Workout Plan</Text>
+              <View style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 5,
+                backgroundColor: 'rgba(235, 94, 40, 0.12)',
+                paddingHorizontal: 10,
+                paddingVertical: 4,
+                borderRadius: Radius.full,
+                borderWidth: 1,
+                borderColor: 'rgba(235, 94, 40, 0.3)'
+              }}>
+                <Zap size={13} color={Colors.primary} />
+                <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.primary }}>
+                  Gemini Flash-Lite Active
+                </Text>
+              </View>
+            </View>
+
+            <Text style={styles.aiDescription}>
+              Answer a few quick questions to let Google Gemini AI generate a personalized FITT workout plan for you.
+            </Text>
+
+            <View style={[styles.btnRow, isMobile && { flexDirection: "column", gap: 10 }]}>
+              <TouchableOpacity
+                style={[styles.createPlanBtn, isMobile && { width: "100%", justifyContent: "center" }]}
+                onPress={openWizard}
+                activeOpacity={0.85}
+                disabled={generating}
+              >
+                <Sparkles size={16} color="#0A0A0C" strokeWidth={2} />
+                <Text style={styles.createPlanText}>
+                  {generating ? "Generating Plan..." : "AI Generate Workout Plan"}
+                </Text>
+              </TouchableOpacity>
+              <Button
+                title="Manual Plan"
+                variant="outline"
+                size="md"
+                onPress={() => router.push("/client/workout-form")}
+                style={isMobile ? { width: "100%" } : { flex: 1 }}
+              />
             </View>
           </View>
 
-          <Text style={styles.aiDescription}>
-            Select your preferred AI engine below and answer a few quick questions to create a personalized FITT workout plan.
-          </Text>
-
-          {/* AI Coach Selection Buttons */}
-          <View style={styles.aiSelectorContainer}>
-            <Text style={styles.aiSelectorLabel}>Select AI Coach:</Text>
-            <View style={styles.aiSelectorPills}>
-              <TouchableOpacity
-                style={[
-                  styles.aiSelectorPill,
-                  selectedAiProvider === "gemini" && styles.aiSelectorPillActiveGemini,
-                ]}
-                onPress={() => setSelectedAiProvider("gemini")}
-                activeOpacity={0.8}
-              >
-                <Zap size={14} color={selectedAiProvider === "gemini" ? Colors.primary : Colors.light.textTertiary} />
-                <Text
-                  style={[
-                    styles.aiSelectorPillText,
-                    selectedAiProvider === "gemini" && styles.aiSelectorPillTextActiveGemini,
-                  ]}
-                >
-                  ⚡ Gemini Flash-Lite
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.aiSelectorPill,
-                  selectedAiProvider === "claude" && styles.aiSelectorPillActiveClaude,
-                ]}
-                onPress={() => setSelectedAiProvider("claude")}
-                activeOpacity={0.8}
-              >
-                <Cpu size={14} color={selectedAiProvider === "claude" ? "#C084FC" : Colors.light.textTertiary} />
-                <Text
-                  style={[
-                    styles.aiSelectorPillText,
-                    selectedAiProvider === "claude" && styles.aiSelectorPillTextActiveClaude,
-                  ]}
-                >
-                  🧠 Claude 3.5 Haiku
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <View style={styles.btnRow}>
-            <TouchableOpacity
-              style={[
-                styles.createPlanBtn,
-                selectedAiProvider === "claude" && { borderColor: "rgba(192, 132, 252, 0.45)" }
-              ]}
-              onPress={openWizard}
-              activeOpacity={0.85}
-              disabled={generating}
-            >
-              <Text style={styles.createPlanEmoji}>✨</Text>
-              <Text style={[
-                styles.createPlanText,
-                selectedAiProvider === "claude" && { color: "#C084FC" }
-              ]}>
-                {generating ? "Generating Plan..." : `AI Generate (${selectedAiProvider === "claude" ? "Claude Haiku" : "Gemini"})`}
-              </Text>
-            </TouchableOpacity>
-            <Button
-              title="Manual Plan"
-              variant="outline"
-              size="md"
-              onPress={() => router.push("/client/workout-form")}
-              style={{ flex: 1 }}
+          {/* Stylized Human Athlete Training Vector Art */}
+          <View
+            style={{
+              position: "absolute",
+              right: 0,
+              top: 0,
+              bottom: 0,
+              width: isMobile ? "100%" : "45%",
+              maxWidth: 380,
+              zIndex: 1,
+              overflow: "hidden",
+              borderTopRightRadius: Radius.xl,
+              borderBottomRightRadius: Radius.xl,
+            }}
+            pointerEvents="none"
+          >
+            <Image
+              source={require("../../assets/vector-athlete-cardio.jpg")}
+              style={{ width: "100%", height: "100%", opacity: isMobile ? 0.22 : 0.88 }}
+              resizeMode="cover"
+            />
+            <LinearGradient
+              colors={isMobile ? ["#18181c", "rgba(24, 24, 28, 0.8)", "rgba(24, 24, 28, 0.35)"] : ["#18181c", "rgba(24, 24, 28, 0.45)", "transparent"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={StyleSheet.absoluteFill}
             />
           </View>
         </Card>
@@ -765,10 +752,32 @@ export default function WorkoutsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Workout Plans</Text>
           {plans.length === 0 ? (
-            <Card variant="outlined">
-              <Text style={styles.emptyText}>
-                No plans yet. Tap ✨ Create Plan or AI Generate to get started!
+            <Card variant="glass" style={{ padding: Spacing.xl, alignItems: "center" }}>
+              <View style={{ marginBottom: Spacing.md, opacity: 0.85 }}>
+                <KettlebellVector width={88} height={88} opacity={0.65} />
+              </View>
+              <Text style={{ fontSize: 16, fontWeight: "700", color: Colors.text, marginBottom: 4 }}>
+                No active workout routine
               </Text>
+              <Text style={[styles.emptyText, { maxWidth: 380, marginBottom: Spacing.md }]}>
+                Design a custom strength regimen or generate a personalized routine with our AI Coach.
+              </Text>
+              <TouchableOpacity
+                style={{
+                  backgroundColor: "rgba(251, 191, 36, 0.12)",
+                  borderWidth: 1,
+                  borderColor: "rgba(251, 191, 36, 0.3)",
+                  paddingVertical: 8,
+                  paddingHorizontal: 16,
+                  borderRadius: Radius.md,
+                }}
+                onPress={openWizard}
+                activeOpacity={0.8}
+              >
+                <Text style={{ color: Colors.primary, fontSize: 13, fontWeight: "700" }}>
+                  Launch AI Wizard
+                </Text>
+              </TouchableOpacity>
             </Card>
           ) : (
             plans.map((plan) => (
@@ -788,8 +797,8 @@ export default function WorkoutsScreen() {
                     />
                     {plan.is_ai_generated && (
                       <Badge
-                        label={plan.description?.toLowerCase().includes("claude") ? "Claude Haiku" : "Gemini AI"}
-                        variant={plan.description?.toLowerCase().includes("claude") ? "secondary" : "info"}
+                        label="Gemini AI"
+                        variant="info"
                         size="sm"
                       />
                     )}
@@ -998,16 +1007,15 @@ export default function WorkoutsScreen() {
             {/* Saving overlay */}
             {saving ? (
               <View style={styles.savingContainer}>
-                <Text style={styles.savingEmoji}>💾</Text>
+                <Sparkles size={32} color={Colors.primary} strokeWidth={2} />
                 <Text style={styles.savingTitle}>Creating your plan…</Text>
                 <Text style={styles.savingSubtitle}>Just a moment!</Text>
               </View>
             ) : (
               <>
-                <Text style={styles.wizardEmoji}>{currentStep?.emoji}</Text>
                 <Text style={styles.wizardQuestion}>{currentStep?.question}</Text>
                 <Text style={styles.wizardSubtitle}>
-                  Coach: {selectedAiProvider === 'claude' ? '🧠 Claude 3.5 Haiku' : '⚡ Gemini 3.5 Flash'} • {currentStep?.subtitle}
+                  Gemini AI Coach • {currentStep?.subtitle}
                 </Text>
 
                 <View style={styles.wizardOptions}>
@@ -1023,7 +1031,6 @@ export default function WorkoutsScreen() {
                         onPress={() => handleWizardOption(opt.label)}
                         activeOpacity={0.75}
                       >
-                        <Text style={styles.wizardOptionEmoji}>{opt.emoji}</Text>
                         <Text
                           style={[
                             styles.wizardOptionLabel,
@@ -1033,7 +1040,7 @@ export default function WorkoutsScreen() {
                           {opt.label}
                         </Text>
                         {isSelected && (
-                          <Text style={styles.wizardCheck}>✓</Text>
+                          <Check size={16} color={Colors.primary} strokeWidth={2.5} />
                         )}
                       </TouchableOpacity>
                     );
@@ -1075,58 +1082,6 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
     lineHeight: Typography.fontSize.sm * Typography.lineHeight.normal,
     marginBottom: Spacing.md,
-  },
-  aiSelectorContainer: {
-    marginBottom: Spacing.lg,
-    padding: Spacing.md,
-    backgroundColor: "rgba(255, 255, 255, 0.03)",
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.06)",
-  },
-  aiSelectorLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: Colors.light.textSecondary,
-    marginBottom: 8,
-  },
-  aiSelectorPills: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-  },
-  aiSelectorPill: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-  },
-  aiSelectorPillActiveGemini: {
-    borderColor: Colors.primary,
-    backgroundColor: "rgba(251, 191, 36, 0.12)",
-  },
-  aiSelectorPillActiveClaude: {
-    borderColor: "#C084FC",
-    backgroundColor: "rgba(192, 132, 252, 0.12)",
-  },
-  aiSelectorPillText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: Colors.light.textSecondary,
-  },
-  aiSelectorPillTextActiveGemini: {
-    color: Colors.primary,
-    fontWeight: "700",
-  },
-  aiSelectorPillTextActiveClaude: {
-    color: "#C084FC",
-    fontWeight: "700",
   },
   btnRow: { flexDirection: "row", gap: Spacing.sm },
   createPlanBtn: {

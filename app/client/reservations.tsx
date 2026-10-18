@@ -11,7 +11,9 @@ import {
   RefreshControl,
   TouchableOpacity,
   Platform,
+  useWindowDimensions,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
 import { Card } from "../../components/ui/Card";
@@ -31,6 +33,10 @@ interface ReservationWithEquipment extends Reservation {
 
 export default function ReservationsScreen() {
   const { profile } = useAuth();
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const isMobile = width < 600;
+  const horizontalPadding = isMobile ? Spacing.md : Spacing.xl;
   const [reservations, setReservations] = useState<ReservationWithEquipment[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -336,7 +342,7 @@ export default function ReservationsScreen() {
             {/* 5-minute wrap-up notice */}
             {timing.is5MinBeforeEnd ? (
               <View style={styles.wrapUpBanner}>
-                <Text style={styles.wrapUpTitle}>⚠️ 5 Minutes Remaining</Text>
+                <Text style={styles.wrapUpTitle}>5 Minutes Remaining</Text>
                 <Text style={styles.wrapUpText}>
                   Please prepare to clean up, wipe down, and fix/rack the equipment in proper order for the next user.
                 </Text>
@@ -356,14 +362,14 @@ export default function ReservationsScreen() {
           <View style={styles.checkinNoticeContainer}>
             {timing.is5MinBeforeStart ? (
               <View style={styles.soonBanner}>
-                <Text style={styles.soonTitle}>🔔 Starts in 5 Minutes</Text>
+                <Text style={styles.soonTitle}>Starts in 5 Minutes</Text>
                 <Text style={styles.soonText}>
                   Head over to the equipment! Your session will activate automatically at {formatTime(item.start_time)}.
                 </Text>
               </View>
             ) : (
               <View style={styles.confirmedBanner}>
-                <Text style={styles.confirmedTitle}>✓ Confirmed — Ready for Use</Text>
+                <Text style={styles.confirmedTitle}>Confirmed — Ready for Use</Text>
                 <Text style={styles.confirmedText}>
                   Your booking is automatically confirmed. Simply proceed to the equipment when your scheduled slot begins at {formatTime(item.start_time)}.
                 </Text>
@@ -428,7 +434,15 @@ export default function ReservationsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View
+        style={[
+          styles.header,
+          {
+            paddingHorizontal: horizontalPadding,
+            paddingTop: isMobile ? Spacing["2xl"] + 12 : Spacing["4xl"] + 8,
+          },
+        ]}
+      >
         <Text style={styles.headerLabel}>Schedule</Text>
         <Text style={styles.title}>My Bookings</Text>
         <Text style={styles.subtitle}>
@@ -441,7 +455,13 @@ export default function ReservationsScreen() {
         data={reservations}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[
+          styles.list,
+          {
+            paddingHorizontal: horizontalPadding,
+            paddingBottom: Math.max(105, 80 + insets.bottom),
+          },
+        ]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

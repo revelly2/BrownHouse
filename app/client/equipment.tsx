@@ -12,13 +12,17 @@ import {
   TouchableOpacity,
   ScrollView,
   Modal,
+  Platform,
+  useWindowDimensions,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { EquipmentCard } from "../../components/equipment/EquipmentCard";
+import { EquipmentDetailsModal } from "../../components/equipment/EquipmentDetailsModal";
 import { Equipment } from "../../lib/types";
 import { Colors, Spacing, Typography, Radius } from "../../constants/colors";
 import { GlassAlert, GlassAlertAction } from "../../components/ui/GlassAlert";
@@ -39,12 +43,19 @@ interface EquipmentWithLiveStatus extends Equipment {
 
 export default function EquipmentScreen() {
   const { profile } = useAuth();
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const isMobile = width < 600;
+  const horizontalPadding = isMobile ? Spacing.md : Spacing.xl;
   const [equipment, setEquipment] = useState<EquipmentWithLiveStatus[]>([]);
   const [filtered, setFiltered] = useState<EquipmentWithLiveStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterType>("all");
+
+  const [detailsModalVisible, setDetailsModalVisible] = useState(false);
+  const [detailsEquipment, setDetailsEquipment] = useState<EquipmentWithLiveStatus | null>(null);
 
   const [alertVisible, setAlertVisible] = useState(false);
   const [alertConfig, setAlertConfig] = useState<{
@@ -442,12 +453,20 @@ export default function EquipmentScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerLabel}>Browse</Text>
+      <View
+        style={[
+          styles.header,
+          {
+            paddingHorizontal: horizontalPadding,
+            paddingTop: isMobile ? Spacing["2xl"] + 12 : Spacing["4xl"] + 8,
+          },
+        ]}
+      >
         <Text style={styles.title}>Equipment</Text>
+        <Text style={styles.subtitle}>{filtered.length} machines ready for training</Text>
       </View>
 
-      <View style={styles.searchSection}>
+      <View style={[styles.searchSection, { paddingHorizontal: horizontalPadding }]}>
         <Input
           placeholder="Search by name, brand, or muscle..."
           value={search}
@@ -474,9 +493,19 @@ export default function EquipmentScreen() {
             equipment={item}
             activeSessionUntil={item._activeUntil}
             onReserve={handleReserve}
+            onViewDetails={(eq) => {
+              setDetailsEquipment(item);
+              setDetailsModalVisible(true);
+            }}
           />
         )}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[
+          styles.list,
+          {
+            paddingHorizontal: horizontalPadding,
+            paddingBottom: Math.max(105, 80 + insets.bottom),
+          },
+        ]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -547,7 +576,7 @@ export default function EquipmentScreen() {
             {Boolean(selectedEquipment?.status === "occupied" || selectedEquipment?._activeUntil) && (
               <View style={styles.inUseNotice}>
                 <Text style={styles.inUseNoticeText}>
-                  ⚠️ Currently in use{selectedEquipment?._activeUntil ? ` until ${selectedEquipment._activeUntil}` : ""}. Select an upcoming available slot below.
+                  Currently in use{selectedEquipment?._activeUntil ? ` until ${selectedEquipment._activeUntil}` : ""}. Select an upcoming available slot below.
                 </Text>
               </View>
             )}
@@ -622,6 +651,22 @@ export default function EquipmentScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Equipment Details Modal */}
+      <EquipmentDetailsModal
+        visible={detailsModalVisible}
+        equipment={detailsEquipment}
+        onClose={() => {
+          setDetailsModalVisible(false);
+          setDetailsEquipment(null);
+        }}
+        onReserve={(eq) => {
+          setDetailsModalVisible(false);
+          if (detailsEquipment) {
+            handleReserve(detailsEquipment);
+          }
+        }}
+      />
     </View>
   );
 }
@@ -635,24 +680,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xl,
     paddingTop: Spacing["4xl"] + 8,
     paddingBottom: Spacing.md,
-  },
-  headerLabel: {
-    fontSize: 11,
-    color: Colors.primary,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 2,
-    marginBottom: 4,
+    maxWidth: 1024,
+    alignSelf: 'center',
+    width: '100%',
   },
   title: {
-    fontSize: Typography.fontSize["2xl"],
-    fontWeight: "300",
-    color: Colors.light.text,
-    letterSpacing: -0.5,
+    fontSize: Typography.fontSize["3xl"],
+    fontWeight: "800",
+    color: Colors.text,
+    letterSpacing: Typography.letterSpacing.tight,
+    fontFamily: Typography.fontFamily.sans,
+  },
+  subtitle: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textSecondary,
+    marginTop: 4,
+    fontFamily: Typography.fontFamily.sans,
   },
   searchSection: {
     paddingHorizontal: Spacing.xl,
     marginBottom: Spacing.md,
+    maxWidth: 1024,
+    alignSelf: 'center',
+    width: '100%',
   },
   filterRow: {
     flexDirection: "row",
@@ -661,20 +711,27 @@ const styles = StyleSheet.create({
   },
   filterChip: {
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 7,
     borderRadius: Radius.full,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-    backgroundColor: "rgba(255, 255, 255, 0.03)",
+    borderColor: "rgba(255, 255, 255, 0.10)",
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    ...Platform.select({
+      web: {
+        cursor: "pointer",
+        transition: "all 0.15s ease",
+      } as any,
+    }),
   },
   filterChipActive: {
-    backgroundColor: "rgba(230, 200, 79, 0.1)",
-    borderColor: "rgba(230, 200, 79, 0.25)",
+    backgroundColor: "rgba(251, 191, 36, 0.12)",
+    borderColor: "rgba(251, 191, 36, 0.35)",
   },
   filterChipText: {
     fontSize: 12,
-    color: Colors.light.textSecondary,
+    color: Colors.textSecondary,
     fontWeight: "600",
+    fontFamily: Typography.fontFamily.sans,
   },
   filterChipTextActive: {
     color: Colors.primary,

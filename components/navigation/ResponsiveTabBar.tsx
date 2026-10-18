@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, StyleSheet, Platform, TouchableOpacity, useWindowDimensions, Image } from "react-native";
-import { Colors, Spacing, Radius } from "../../constants/colors";
+import { Colors, Spacing, Radius, Typography } from "../../constants/colors";
 import { useAuth } from "../../lib/auth";
 import { Icon } from "../ui/Icon";
 
@@ -90,60 +90,74 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: 250,
-    backgroundColor: "rgba(10, 10, 12, 0.65)",
+    backgroundColor: "rgba(12, 12, 15, 0.72)",
     borderRightWidth: 1,
-    borderRightColor: "rgba(255, 255, 255, 0.15)",
+    borderRightColor: "rgba(255, 255, 255, 0.08)",
     paddingVertical: Spacing["3xl"],
     paddingHorizontal: Spacing.lg,
-    zIndex: 100, // ensure it floats above content
+    zIndex: 100,
     ...Platform.select({
       web: {
-        backdropFilter: "blur(20px)",
-        WebkitBackdropFilter: "blur(20px)",
-      },
+        backdropFilter: "blur(24px) saturate(190%)",
+        WebkitBackdropFilter: "blur(24px) saturate(190%)",
+      } as any,
     }),
   },
   logoContainer: {
     paddingHorizontal: Spacing.md,
-    marginBottom: Spacing["4xl"],
+    marginBottom: Spacing["3xl"],
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,
   },
   logoText: {
-    fontSize: 20,
-    fontWeight: "900",
-    color: Colors.textTertiary,
-    letterSpacing: 1,
+    fontSize: 18,
+    fontWeight: "800",
+    color: Colors.text,
+    letterSpacing: Typography.letterSpacing.tight,
+    fontFamily: Typography.fontFamily.sans,
   },
   navItemsContainer: {
     flex: 1,
-    gap: Spacing.sm,
+    gap: 6,
   },
   sidebarItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: Spacing.md,
+    paddingVertical: 10,
     paddingHorizontal: Spacing.md,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.md,
     backgroundColor: "transparent",
     gap: Spacing.md,
+    borderWidth: 1,
+    borderColor: "transparent",
+    ...Platform.select({
+      web: {
+        cursor: "pointer",
+        transition: "background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease",
+      } as any,
+    }),
   },
   sidebarItemFocused: {
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    backgroundColor: "rgba(251, 191, 36, 0.12)",
+    borderColor: "rgba(251, 191, 36, 0.22)",
+    borderTopColor: "rgba(251, 191, 36, 0.32)",
   },
   iconContainer: {
-    width: 28,
+    width: 26,
     alignItems: "center",
     justifyContent: "center",
   },
   sidebarItemText: {
     fontSize: 14,
-    fontWeight: "600",
+    fontWeight: "500",
     color: Colors.textSecondary,
+    fontFamily: Typography.fontFamily.sans,
+    letterSpacing: Typography.letterSpacing.normal,
   },
   sidebarItemTextFocused: {
-    color: Colors.text,
+    color: Colors.primary,
+    fontWeight: "600",
   },
   bottomContainer: {
     paddingTop: Spacing.md,
@@ -154,15 +168,23 @@ const styles = StyleSheet.create({
   logoutBtn: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: Spacing.md,
+    paddingVertical: 10,
     paddingHorizontal: Spacing.md,
-    borderRadius: Radius.lg,
-    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    borderRadius: Radius.md,
+    backgroundColor: "rgba(239, 68, 68, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.18)",
     gap: Spacing.md,
+    ...Platform.select({
+      web: {
+        cursor: "pointer",
+      } as any,
+    }),
   },
   logoutText: {
     fontSize: 14,
     fontWeight: "600",
     color: Colors.error || "#EF4444",
+    fontFamily: Typography.fontFamily.sans,
   },
 });

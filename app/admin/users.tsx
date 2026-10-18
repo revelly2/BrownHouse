@@ -299,7 +299,7 @@ export default function UsersScreen() {
                   }}
                 >
                   <Text style={[styles.modalOptionText, { color: Colors.primary }]}>
-                    💳 Manage Memberships & Billing
+                    Manage Memberships & Billing
                   </Text>
                 </TouchableOpacity>
               )}

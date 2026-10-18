@@ -13,7 +13,9 @@ import {
   Image,
   TouchableOpacity,
   Modal,
+  useWindowDimensions,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import { useAuth } from "../../lib/auth";
@@ -27,6 +29,10 @@ import { ReceiptModal, MembershipReceiptData } from "../../components/membership
 
 export default function ProfileScreen() {
   const { profile, user, signOut, updateProfile } = useAuth();
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const isMobile = width < 600;
+  const horizontalPadding = isMobile ? Spacing.md : Spacing.xl;
   const [membershipInfo, setMembershipInfo] = useState<any | null>(null);
   const [receiptModalVisible, setReceiptModalVisible] = useState(false);
   const [receiptData, setReceiptData] = useState<MembershipReceiptData | null>(null);
@@ -251,7 +257,14 @@ export default function ProfileScreen() {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[
+        styles.content,
+        {
+          paddingHorizontal: horizontalPadding,
+          paddingTop: isMobile ? Spacing["2xl"] + 12 : Spacing["4xl"] + 8,
+          paddingBottom: Math.max(105, 80 + insets.bottom),
+        },
+      ]}
     >
       <View style={styles.header}>
         <Text style={styles.headerLabel}>Account</Text>
@@ -325,7 +338,7 @@ export default function ProfileScreen() {
             </Text>
             <View style={{ flexDirection: "row", justifyContent: "flex-end", marginTop: Spacing.sm }}>
               <Button
-                title="📄 View Official Receipt"
+                title="View Official Receipt"
                 variant="outline"
                 size="sm"
                 onPress={viewMyReceipt}

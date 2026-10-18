@@ -6,7 +6,7 @@ import React, { useEffect } from "react";
 import { Tabs, router } from "expo-router";
 import { View, StyleSheet, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors, Typography } from "../../constants/colors";
+import { Colors, Typography, Radius } from "../../constants/colors";
 import { Icon, IconName } from "../../components/ui/Icon";
 import { DesktopSidebar, useIsDesktop } from "../../components/navigation/ResponsiveTabBar";
 import { useAuth } from "../../lib/auth";
@@ -69,12 +69,14 @@ export default function ClientLayout() {
           backgroundColor: "transparent",
           marginLeft: isDesktop ? 250 : 0,
         },
+        tabBarHideOnKeyboard: true,
         tabBarActiveTintColor: Colors.primary,
-        tabBarInactiveTintColor: Colors.light.textTertiary,
+        tabBarInactiveTintColor: "rgba(255, 255, 255, 0.45)",
         tabBarStyle: [
           styles.tabBar,
           {
-            bottom: insets.bottom > 0 ? insets.bottom : 24,
+            height: 60 + (insets.bottom > 0 ? insets.bottom : 10),
+            paddingBottom: insets.bottom > 0 ? insets.bottom : 8,
           },
         ],
         tabBarLabelStyle: styles.tabLabel,
@@ -148,42 +150,50 @@ export default function ClientLayout() {
 const styles = StyleSheet.create({
   tabBar: {
     position: "absolute",
-    left: 24,
-    right: 24,
-    height: 68,
-    backgroundColor: "rgba(10, 10, 10, 0.65)",
-    borderTopWidth: 0,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.15)",
-    borderRadius: 34,
-    paddingBottom: 6,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(11, 12, 16, 0.96)",
+    borderTopWidth: 1,
+    borderWidth: 0,
+    borderColor: "transparent",
+    borderTopColor: "rgba(255, 255, 255, 0.12)",
+    borderRadius: 0,
     paddingTop: 8,
-    elevation: 20,
+    elevation: 24,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.4,
-    shadowRadius: 24,
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
     ...Platform.select({
       web: {
-        backdropFilter: "blur(16px)",
-        WebkitBackdropFilter: "blur(16px)",
-      },
+        position: "fixed" as any,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 1000,
+        backdropFilter: "blur(28px) saturate(190%)",
+        WebkitBackdropFilter: "blur(28px) saturate(190%)",
+        boxShadow: "0 -4px 24px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.12)",
+      } as any,
     }),
   },
   tabLabel: {
     fontSize: 10,
-    fontWeight: "600",
+    fontWeight: "700",
     letterSpacing: 0.5,
     textTransform: "uppercase",
+    fontFamily: Typography.fontFamily.sans,
+    marginTop: 2,
   },
   iconWrap: {
     width: 36,
     height: 36,
-    borderRadius: 10,
+    borderRadius: Radius.md,
     justifyContent: "center",
     alignItems: "center",
   },
   iconWrapFocused: {
-    backgroundColor: "rgba(230, 200, 79, 0.1)",
+    backgroundColor: "rgba(251, 191, 36, 0.14)",
   },
 });

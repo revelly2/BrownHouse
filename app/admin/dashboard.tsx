@@ -26,6 +26,7 @@ import { useAuth } from "../../lib/auth";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
+import { Icon } from "../../components/ui/Icon";
 import { ToastManager } from "../../components/ui/Toast";
 import { Radius, Colors, Typography, Spacing } from "../../constants/colors";
 import { getLocalDateString } from "../../lib/utils";
@@ -236,8 +237,6 @@ export default function AdminDashboard() {
     provider: "gemini",
     geminiModel: "gemini-flash-lite-latest",
     geminiApiKey: "",
-    claudeModel: "claude-3-5-haiku-20241022",
-    claudeApiKey: "",
     temperature: 0.7,
     maxTokens: 2048,
     enabled: true,
@@ -247,14 +246,13 @@ export default function AdminDashboard() {
   const [aiTestResult, setAiTestResult] = useState<{ success: boolean; message: string; latencyMs: number } | null>(null);
   const [savingAi, setSavingAi] = useState(false);
   const [showGeminiKey, setShowGeminiKey] = useState(false);
-  const [showClaudeKey, setShowClaudeKey] = useState(false);
 
   const handleSaveAISettings = async () => {
     setSavingAi(true);
     const result = await saveAISettings(aiConfig);
     setSavingAi(false);
     if (result.success) {
-      ToastManager.show("AI Settings Saved", `Active: ${aiConfig.provider === 'gemini' ? 'Google Gemini' : 'Anthropic Claude'}`, "success");
+      ToastManager.show("AI Settings Saved", "Google Gemini configured successfully.", "success");
       setAiModalVisible(false);
     } else {
       ToastManager.show("Save Failed", result.error || "Could not save AI settings.", "error");
@@ -264,9 +262,9 @@ export default function AdminDashboard() {
   const handleTestAI = async () => {
     setTestingAi(true);
     setAiTestResult(null);
-    const key = aiConfig.provider === "gemini" ? aiConfig.geminiApiKey : aiConfig.claudeApiKey;
-    const model = aiConfig.provider === "gemini" ? aiConfig.geminiModel : aiConfig.claudeModel;
-    const result = await testAIConnection(aiConfig.provider, key, model);
+    const key = aiConfig.geminiApiKey;
+    const model = aiConfig.geminiModel;
+    const result = await testAIConnection("gemini", key, model);
     setTestingAi(false);
     setAiTestResult(result);
     if (result.success) {
@@ -1096,24 +1094,20 @@ export default function AdminDashboard() {
               style={[
                 styles.actionBtn,
                 {
-                  borderColor: aiConfig.provider === 'claude' ? '#C084FC' : Colors.primary,
-                  backgroundColor: aiConfig.provider === 'claude' ? 'rgba(192, 132, 252, 0.08)' : 'rgba(235, 94, 40, 0.08)',
+                  borderColor: Colors.primary,
+                  backgroundColor: 'rgba(235, 94, 40, 0.08)',
                 },
               ]}
               onPress={() => setAiModalVisible(true)}
             >
-              {aiConfig.provider === 'claude' ? (
-                <Cpu size={16} color="#C084FC" />
-              ) : (
-                <Zap size={16} color={Colors.primary} />
-              )}
+              <Zap size={16} color={Colors.primary} />
               <Text
                 style={[
                   styles.actionBtnText,
-                  { color: aiConfig.provider === 'claude' ? '#C084FC' : Colors.primary, fontWeight: '700' },
+                  { color: Colors.primary, fontWeight: '700' },
                 ]}
               >
-                AI: {aiConfig.provider === 'claude' ? 'Claude Haiku' : 'Gemini Flash'}
+                AI: Gemini Flash
               </Text>
             </TouchableOpacity>
 
@@ -1213,9 +1207,10 @@ export default function AdminDashboard() {
                     </View>
                   )}
                   {selectedPoint && (
-                    <View style={[styles.filterChip, styles.filterChipPoint]}>
+                    <View style={[styles.filterChip, styles.filterChipPoint, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+                      <Icon name="pin" size={12} color={Colors.primary} />
                       <Text style={[styles.filterChipText, { color: Colors.primary, fontWeight: '700' }]}>
-                        📍 {selectedPoint.label}: {selectedPoint.value} {activeMetric}
+                        {selectedPoint.label}: {selectedPoint.value} {activeMetric}
                       </Text>
                       <TouchableOpacity onPress={() => setSelectedPoint(null)}>
                         <X size={12} color={Colors.primary} />
@@ -1351,17 +1346,13 @@ export default function AdminDashboard() {
                   onPress={() => setAiModalVisible(true)}
                 >
                   <Card style={styles.actionCardInner}>
-                    <View style={[styles.actionCardIcon, { backgroundColor: aiConfig.provider === 'claude' ? 'rgba(192, 132, 252, 0.15)' : 'rgba(235, 94, 40, 0.15)' }]}>
-                      {aiConfig.provider === 'claude' ? (
-                        <Cpu size={20} color="#C084FC" />
-                      ) : (
-                        <Zap size={20} color={Colors.primary} />
-                      )}
+                    <View style={[styles.actionCardIcon, { backgroundColor: 'rgba(235, 94, 40, 0.15)' }]}>
+                      <Zap size={20} color={Colors.primary} />
                     </View>
                     <View style={styles.actionCardText}>
                       <Text style={styles.actionCardTitle}>AI Coach Engine</Text>
                       <Text style={styles.actionCardDesc}>
-                        {aiConfig.provider === 'claude' ? 'Claude Haiku' : 'Gemini Flash'} • Config
+                        Google Gemini • Config
                       </Text>
                     </View>
                   </Card>
@@ -2120,19 +2111,15 @@ export default function AdminDashboard() {
                   width: 38,
                   height: 38,
                   borderRadius: Radius.md,
-                  backgroundColor: aiConfig.provider === 'claude' ? 'rgba(192, 132, 252, 0.15)' : 'rgba(235, 94, 40, 0.15)',
+                  backgroundColor: 'rgba(235, 94, 40, 0.15)',
                   alignItems: 'center',
                   justifyContent: 'center'
                 }}>
-                  {aiConfig.provider === 'claude' ? (
-                    <Cpu size={20} color="#C084FC" />
-                  ) : (
-                    <Zap size={20} color={Colors.primary} />
-                  )}
+                  <Zap size={20} color={Colors.primary} />
                 </View>
                 <View>
                   <Text style={styles.modalTitle}>AI Engine Settings</Text>
-                  <Text style={styles.modalSubtitle}>Configure Gemini & Claude Haiku models & keys</Text>
+                  <Text style={styles.modalSubtitle}>Configure Google Gemini models & API key</Text>
                 </View>
               </View>
               <TouchableOpacity
@@ -2145,151 +2132,50 @@ export default function AdminDashboard() {
 
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
               <View style={{ gap: Spacing.lg }}>
-                {/* Provider Selector */}
-                <View>
-                  <Text style={styles.fieldSectionLabel}>Select Active AI Engine</Text>
-                  <View style={styles.aiProviderRow}>
-                    {/* Gemini Option */}
-                    <TouchableOpacity
-                      style={[
-                        styles.aiProviderCard,
-                        aiConfig.provider === "gemini" && styles.aiProviderCardActive,
-                      ]}
-                      onPress={() => setAiConfig(prev => ({ ...prev, provider: "gemini" }))}
-                    >
-                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-                        <View style={[styles.aiLogoBox, { backgroundColor: "rgba(235, 94, 40, 0.15)" }]}>
-                          <Zap size={20} color={Colors.primary} />
-                        </View>
-                        {aiConfig.provider === "gemini" && (
-                          <View style={styles.selectedCheck}>
-                            <Check size={12} color="#FFF" />
-                          </View>
-                        )}
-                      </View>
-                      <View>
-                        <Text style={styles.aiProviderName}>Google Gemini</Text>
-                        <Text style={styles.aiProviderSub}>Fast & Cost-Efficient</Text>
-                      </View>
-                      <View style={styles.aiModelTag}>
-                        <Text style={styles.aiModelTagText}>{aiConfig.geminiModel}</Text>
-                      </View>
-                    </TouchableOpacity>
+                {/* Gemini Config */}
+                <View style={styles.providerConfigBox}>
+                  <Text style={styles.configBoxTitle}>⚡ Google Gemini Details</Text>
+                  
+                  <View style={{ marginTop: Spacing.sm }}>
+                    <Text style={styles.inputLabel}>Gemini Model</Text>
+                    <View style={styles.chipRow}>
+                      {[
+                        { id: "gemini-flash-lite-latest", label: "⚡ Flash-Lite (Lowest Consumption / Recommended)" },
+                        { id: "gemini-3.1-flash-lite", label: "Flash-Lite 3.1" },
+                        { id: "gemini-3.5-flash-lite", label: "Flash-Lite 3.5" },
+                        { id: "gemini-3.8-flash", label: "Flash 3.8" },
+                      ].map((m) => (
+                        <TouchableOpacity
+                          key={m.id}
+                          style={[styles.modelChip, aiConfig.geminiModel === m.id && styles.modelChipActive]}
+                          onPress={() => setAiConfig(prev => ({ ...prev, geminiModel: m.id }))}
+                        >
+                          <Text style={[styles.modelChipText, aiConfig.geminiModel === m.id && styles.modelChipTextActive]}>
+                            {m.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
 
-                    {/* Claude Haiku Option */}
-                    <TouchableOpacity
-                      style={[
-                        styles.aiProviderCard,
-                        aiConfig.provider === "claude" && [styles.aiProviderCardActive, { borderColor: "#C084FC", backgroundColor: "rgba(192, 132, 252, 0.08)" }],
-                      ]}
-                      onPress={() => setAiConfig(prev => ({ ...prev, provider: "claude" }))}
-                    >
-                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-                        <View style={[styles.aiLogoBox, { backgroundColor: "rgba(192, 132, 252, 0.15)" }]}>
-                          <Cpu size={20} color="#C084FC" />
-                        </View>
-                        {aiConfig.provider === "claude" && (
-                          <View style={[styles.selectedCheck, { backgroundColor: "#C084FC" }]}>
-                            <Check size={12} color="#FFF" />
-                          </View>
-                        )}
-                      </View>
-                      <View>
-                        <Text style={styles.aiProviderName}>Claude Haiku</Text>
-                        <Text style={styles.aiProviderSub}>Anthropic 2nd AI</Text>
-                      </View>
-                      <View style={styles.aiModelTag}>
-                        <Text style={styles.aiModelTagText}>Claude 3.5 Haiku</Text>
-                      </View>
-                    </TouchableOpacity>
+                  <View style={{ marginTop: Spacing.md }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={styles.inputLabel}>Gemini API Key</Text>
+                      <TouchableOpacity onPress={() => setShowGeminiKey(!showGeminiKey)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        {showGeminiKey ? <EyeOff size={14} color={Colors.textTertiary} /> : <Eye size={14} color={Colors.textTertiary} />}
+                        <Text style={{ fontSize: 11, color: Colors.textTertiary }}>{showGeminiKey ? "Hide" : "Reveal"}</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <Input
+                      placeholder="AQ.Ab8RN..."
+                      value={aiConfig.geminiApiKey}
+                      onChangeText={(val) => setAiConfig(prev => ({ ...prev, geminiApiKey: val }))}
+                      secureTextEntry={!showGeminiKey}
+                      containerStyle={{ marginBottom: 0 }}
+                    />
+                    <Text style={styles.keyHint}>Key from Google AI Studio (.env loaded if set).</Text>
                   </View>
                 </View>
-
-                {/* Specific Config based on selection */}
-                {aiConfig.provider === "gemini" ? (
-                  <View style={styles.providerConfigBox}>
-                    <Text style={styles.configBoxTitle}>⚡ Google Gemini Details</Text>
-                    
-                    <View style={{ marginTop: Spacing.sm }}>
-                      <Text style={styles.inputLabel}>Gemini Model</Text>
-                      <View style={styles.chipRow}>
-                        {[
-                          { id: "gemini-flash-lite-latest", label: "⚡ Flash-Lite (Lowest Consumption / Recommended)" },
-                          { id: "gemini-3.1-flash-lite", label: "Flash-Lite 3.1" },
-                          { id: "gemini-3.5-flash-lite", label: "Flash-Lite 3.5" },
-                          { id: "gemini-3.8-flash", label: "Flash 3.8" },
-                        ].map((m) => (
-                          <TouchableOpacity
-                            key={m.id}
-                            style={[styles.modelChip, aiConfig.geminiModel === m.id && styles.modelChipActive]}
-                            onPress={() => setAiConfig(prev => ({ ...prev, geminiModel: m.id }))}
-                          >
-                            <Text style={[styles.modelChipText, aiConfig.geminiModel === m.id && styles.modelChipTextActive]}>
-                              {m.label}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    </View>
-
-                    <View style={{ marginTop: Spacing.md }}>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text style={styles.inputLabel}>Gemini API Key</Text>
-                        <TouchableOpacity onPress={() => setShowGeminiKey(!showGeminiKey)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          {showGeminiKey ? <EyeOff size={14} color={Colors.textTertiary} /> : <Eye size={14} color={Colors.textTertiary} />}
-                          <Text style={{ fontSize: 11, color: Colors.textTertiary }}>{showGeminiKey ? "Hide" : "Reveal"}</Text>
-                        </TouchableOpacity>
-                      </View>
-                      <Input
-                        placeholder="AQ.Ab8RN..."
-                        value={aiConfig.geminiApiKey}
-                        onChangeText={(val) => setAiConfig(prev => ({ ...prev, geminiApiKey: val }))}
-                        secureTextEntry={!showGeminiKey}
-                        containerStyle={{ marginBottom: 0 }}
-                      />
-                      <Text style={styles.keyHint}>Key from Google AI Studio (.env loaded if set).</Text>
-                    </View>
-                  </View>
-                ) : (
-                  <View style={styles.providerConfigBox}>
-                    <Text style={styles.configBoxTitle}>🧠 Anthropic Claude Haiku Details</Text>
-                    
-                    <View style={{ marginTop: Spacing.sm }}>
-                      <Text style={styles.inputLabel}>Claude Model</Text>
-                      <View style={styles.chipRow}>
-                        {["claude-3-5-haiku-20241022", "claude-3-haiku-20240307"].map((m) => (
-                          <TouchableOpacity
-                            key={m}
-                            style={[styles.modelChip, aiConfig.claudeModel === m && styles.modelChipActive]}
-                            onPress={() => setAiConfig(prev => ({ ...prev, claudeModel: m }))}
-                          >
-                            <Text style={[styles.modelChipText, aiConfig.claudeModel === m && styles.modelChipTextActive]}>
-                              {m === "claude-3-5-haiku-20241022" ? "Claude 3.5 Haiku (Latest)" : "Claude 3 Haiku"}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    </View>
-
-                    <View style={{ marginTop: Spacing.md }}>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text style={styles.inputLabel}>Anthropic API Key</Text>
-                        <TouchableOpacity onPress={() => setShowClaudeKey(!showClaudeKey)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          {showClaudeKey ? <EyeOff size={14} color={Colors.textTertiary} /> : <Eye size={14} color={Colors.textTertiary} />}
-                          <Text style={{ fontSize: 11, color: Colors.textTertiary }}>{showClaudeKey ? "Hide" : "Reveal"}</Text>
-                        </TouchableOpacity>
-                      </View>
-                      <Input
-                        placeholder="sk-ant-api03-..."
-                        value={aiConfig.claudeApiKey}
-                        onChangeText={(val) => setAiConfig(prev => ({ ...prev, claudeApiKey: val }))}
-                        secureTextEntry={!showClaudeKey}
-                        containerStyle={{ marginBottom: 0 }}
-                      />
-                      <Text style={styles.keyHint}>Key from console.anthropic.com.</Text>
-                    </View>
-                  </View>
-                )}
 
                 {/* Creativity Preset */}
                 <View>

@@ -1,5 +1,5 @@
 // ============================================================================
-// Input Component — Styled Text Input
+// Input Component — Styled Text Input with Apple Design Aesthetics
 // ============================================================================
 
 import React, { useState } from "react";
@@ -11,6 +11,7 @@ import {
   TextInputProps,
   ViewStyle,
   TouchableOpacity,
+  Platform,
 } from "react-native";
 import { Colors, Radius, Spacing, Typography } from "../../constants/colors";
 
@@ -57,7 +58,7 @@ export function Input({
             rightIcon ? { paddingRight: 0 } : undefined,
             style,
           ]}
-          placeholderTextColor={Colors.textTertiary}
+          placeholderTextColor="rgba(255, 255, 255, 0.35)"
           onFocus={(e) => {
             setFocused(true);
             props.onFocus?.(e);
@@ -73,6 +74,7 @@ export function Input({
           <TouchableOpacity
             onPress={onRightIconPress}
             style={styles.iconRight}
+            activeOpacity={0.65}
             disabled={!onRightIconPress}
           >
             {rightIcon}
@@ -93,32 +95,53 @@ const styles = StyleSheet.create({
   label: {
     fontSize: Typography.fontSize.sm,
     fontWeight: "600",
-    color: Colors.text,
+    color: Colors.textSecondary,
     marginBottom: Spacing.xs + 2,
+    letterSpacing: Typography.letterSpacing.normal,
+    fontFamily: Typography.fontFamily.sans,
   },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.surface, // Should be #181d24
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
     borderWidth: 1,
-    borderColor: Colors.border, // #293039
+    borderColor: "rgba(255, 255, 255, 0.10)",
+    borderTopColor: "rgba(255, 255, 255, 0.14)",
     borderRadius: Radius.md,
     minHeight: 48,
     paddingHorizontal: Spacing.md,
+    ...Platform.select({
+      web: {
+        transition: "border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease",
+      } as any,
+    }),
   },
   inputWrapperFocused: {
     borderColor: Colors.primary,
-    backgroundColor: Colors.background, // Match page background when focused
+    backgroundColor: "rgba(255, 255, 255, 0.07)",
+    ...Platform.select({
+      web: {
+        boxShadow: "0 0 0 3px rgba(251, 191, 36, 0.2)",
+      } as any,
+    }),
   },
   inputWrapperError: {
     borderColor: Colors.error,
+    backgroundColor: "rgba(239, 68, 68, 0.06)",
+    ...Platform.select({
+      web: {
+        boxShadow: "0 0 0 3px rgba(239, 68, 68, 0.18)",
+      } as any,
+    }),
   },
   input: {
     flex: 1,
     fontSize: Typography.fontSize.base,
     color: Colors.text,
-    paddingVertical: Spacing.sm,
+    paddingVertical: Spacing.sm + 2,
     outlineStyle: "none" as any,
+    fontFamily: Typography.fontFamily.sans,
+    letterSpacing: Typography.letterSpacing.normal,
   },
   iconLeft: {
     marginRight: Spacing.sm,
@@ -130,10 +153,14 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.xs,
     color: Colors.error,
     marginTop: Spacing.xs,
+    fontWeight: "500",
+    letterSpacing: Typography.letterSpacing.wide,
   },
   hint: {
     fontSize: Typography.fontSize.xs,
     color: Colors.textTertiary,
     marginTop: Spacing.xs,
+    fontWeight: "400",
+    letterSpacing: Typography.letterSpacing.wide,
   },
 });

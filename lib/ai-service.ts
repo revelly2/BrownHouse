@@ -1,18 +1,18 @@
 // ============================================================================
-// AI Service — Multi-Provider Engine (Google Gemini & Anthropic Claude Haiku)
+// AI Service — Google Gemini Engine
 // ============================================================================
 
 import { supabase } from "./supabase";
 import { Platform } from "react-native";
 
-export type AIProvider = "gemini" | "claude";
+export type AIProvider = "gemini";
 
 export interface AISettingsConfig {
   provider: AIProvider;
   geminiModel: string;
   geminiApiKey: string;
-  claudeModel: string;
-  claudeApiKey: string;
+  claudeModel?: string;
+  claudeApiKey?: string;
   temperature: number;
   maxTokens: number;
   enabled: boolean;
@@ -24,8 +24,6 @@ const DEFAULT_AI_CONFIG: AISettingsConfig = {
   provider: "gemini",
   geminiModel: process.env.AI_MODEL || "gemini-flash-lite-latest",
   geminiApiKey: process.env.AI_API_KEY || process.env.EXPO_PUBLIC_GEMINI_API_KEY || "",
-  claudeModel: "claude-3-5-haiku-20241022",
-  claudeApiKey: process.env.CLAUDE_API_KEY || process.env.EXPO_PUBLIC_CLAUDE_API_KEY || "",
   temperature: 0.7,
   maxTokens: 2048,
   enabled: true,
@@ -86,9 +84,6 @@ export async function getAISettings(): Promise<AISettingsConfig> {
   if (!config.geminiApiKey && process.env.AI_API_KEY) {
     config.geminiApiKey = process.env.AI_API_KEY;
   }
-  if (!config.claudeApiKey && process.env.CLAUDE_API_KEY) {
-    config.claudeApiKey = process.env.CLAUDE_API_KEY;
-  }
 
   cachedConfig = config;
   return { ...config };
@@ -143,19 +138,22 @@ export async function saveAISettings(
 /**
  * Ping / Test an AI provider model with a quick hello prompt to test latency and connectivity
  */
+/**
+ * Test the Google Gemini AI Connection
+ */
 export async function testAIConnection(
-  provider: AIProvider,
+  provider: AIProvider = "gemini",
   apiKeyParam?: string,
   modelParam?: string
 ): Promise<{ success: boolean; message: string; latencyMs: number }> {
   const config = await getAISettings();
-  const apiKey = (apiKeyParam !== undefined ? apiKeyParam : provider === "gemini" ? config.geminiApiKey : config.claudeApiKey).trim();
-  const model = modelParam || (provider === "gemini" ? config.geminiModel : config.claudeModel);
+  const apiKey = (apiKeyParam !== undefined ? apiKeyParam : config.geminiApiKey).trim();
+  const model = modelParam || config.geminiModel;
 
   if (!apiKey) {
     return {
       success: false,
-      message: `Missing ${provider === "gemini" ? "Google Gemini" : "Anthropic Claude"} API Key. Please provide one.`,
+      message: `Missing Google Gemini API Key. Please provide one.`,
       latencyMs: 0,
     };
   }
@@ -163,83 +161,49 @@ export async function testAIConnection(
   const startTime = Date.now();
 
   try {
-    if (provider === "gemini") {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: "Hello! Respond with the single word: READY" }] }],
-          generationConfig: { maxOutputTokens: 20, temperature: 0.1 },
-        }),
-      });
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: "Hello! Respond with the single word: READY" }] }],
+        generationConfig: { maxOutputTokens: 20, temperature: 0.1 },
+      }),
+    });
 
-      const latencyMs = Date.now() - startTime;
-      const data = await response.json();
+    const latencyMs = Date.now() - startTime;
+    const data = await response.json();
 
-      if (!response.ok) {
-        if (response.status === 429) {
-          return {
-            success: false,
-            message: `Quota limit reached on ${model}. Please switch to "gemini-flash-lite-latest" for the lowest consumption tier!`,
-            latencyMs,
-          };
-        }
-        const errorMsg = data?.error?.message || `HTTP ${response.status} Error`;
-        return { success: false, message: errorMsg, latencyMs };
+    if (!response.ok) {
+      if (response.status === 429) {
+        return {
+          success: false,
+          message: `Quota limit reached on ${model}. Please switch to "gemini-flash-lite-latest" for the lowest consumption tier!`,
+          latencyMs,
+        };
       }
-
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-      return {
-        success: true,
-        message: `Connected successfully (${model})! Response: "${text}"`,
-        latencyMs,
-      };
-    } else {
-      // Anthropic Claude
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "content-type": "application/json",
-          "dangerously-allow-browser": "true",
-        },
-        body: JSON.stringify({
-          model: model || "claude-3-5-haiku-20241022",
-          max_tokens: 30,
-          temperature: 0.1,
-          messages: [{ role: "user", content: "Hello! Respond with the single word: READY" }],
-        }),
-      });
-
-      const latencyMs = Date.now() - startTime;
-      const data = await response.json();
-
-      if (!response.ok) {
-        const errorMsg = data?.error?.message || `HTTP ${response.status} Error`;
-        return { success: false, message: errorMsg, latencyMs };
-      }
-
-      const text = data?.content?.[0]?.text?.trim() || "";
-      return {
-        success: true,
-        message: `Connected successfully (${model})! Response: "${text}"`,
-        latencyMs,
-      };
+      const errorMsg = data?.error?.message || `HTTP ${response.status} Error`;
+      return { success: false, message: errorMsg, latencyMs };
     }
+
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+    return {
+      success: true,
+      message: `Connected successfully (${model})! Response: "${text}"`,
+      latencyMs,
+    };
   } catch (err: any) {
     const latencyMs = Date.now() - startTime;
     return {
       success: false,
-      message: err.message || "Network error while connecting to AI provider.",
+      message: err.message || "Network error while connecting to Google Gemini.",
       latencyMs,
     };
   }
 }
 
 /**
- * Generate a personalized FITT Workout Plan using either Gemini or Claude Haiku
+ * Generate a personalized FITT Workout Plan using Google Gemini
  */
 export async function generateWorkoutPlan(
   profile: any,
@@ -249,14 +213,14 @@ export async function generateWorkoutPlan(
   providerOverride?: AIProvider
 ): Promise<any> {
   const config = await getAISettings();
-  const provider = providerOverride || config.provider || "gemini";
+  const provider = "gemini";
 
-  const apiKey = (provider === "gemini" ? config.geminiApiKey : config.claudeApiKey).trim();
-  let model = provider === "gemini" ? config.geminiModel : config.claudeModel;
+  const apiKey = config.geminiApiKey.trim();
+  let model = config.geminiModel;
 
   if (!apiKey) {
     throw new Error(
-      `API Key for ${provider === "gemini" ? "Google Gemini" : "Anthropic Claude"} is missing. Please configure it in Admin AI Settings.`
+      `API Key for Google Gemini is missing. Please configure it in Admin AI Settings.`
     );
   }
 
@@ -289,7 +253,7 @@ Return ONLY a valid JSON object matching this exact schema:
     }
   ],
   "notes": "string",
-  "ai_provider": "${provider}",
+  "ai_provider": "gemini",
   "ai_model": "${model}"
 }`;
 
@@ -327,90 +291,55 @@ Rules:
 
   let cleanJson = "";
 
-  if (provider === "gemini") {
-    // Priority order: user-configured model first, then lightweight low-consumption fallbacks
-    const candidateModels = [
-      model,
-      "gemini-flash-lite-latest",
-      "gemini-3.1-flash-lite",
-      "gemini-3.5-flash-lite",
-    ].filter((m, idx, arr) => m && arr.indexOf(m) === idx);
+  // Priority order: user-configured model first, then lightweight low-consumption fallbacks
+  const candidateModels = [
+    model,
+    "gemini-flash-lite-latest",
+    "gemini-3.1-flash-lite",
+    "gemini-3.5-flash-lite",
+  ].filter((m, idx, arr) => m && arr.indexOf(m) === idx);
 
-    let success = false;
-    let lastError = "";
+  let success = false;
+  let lastError = "";
 
-    for (const currentModel of candidateModels) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`;
-        const response = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            system_instruction: { parts: [{ text: systemPrompt }] },
-            contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-            generationConfig: {
-              responseMimeType: "application/json",
-              temperature: config.temperature || 0.7,
-            },
-          }),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (rawText) {
-            cleanJson = rawText;
-            model = currentModel;
-            success = true;
-            break;
-          }
-        } else {
-          const errData = await response.json().catch(() => null);
-          lastError = errData?.error?.message || `HTTP ${response.status}`;
-          console.warn(`[AI Service] Model ${currentModel} returned ${response.status}: ${lastError}. Trying next lightweight model...`);
-        }
-      } catch (e: any) {
-        lastError = e?.message || "Network error";
-      }
-    }
-
-    if (!success) {
-      console.warn(`[AI Service] All Gemini models exceeded quota or failed: ${lastError}. Generating smart FITT fallback plan.`);
-      return generateFITTFallbackPlan(profile, exercises, preferences, "Gemini Flash-Lite (Offline Engine)");
-    }
-  } else {
-    // Anthropic Claude Haiku
+  for (const currentModel of candidateModels) {
     try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`;
+      const response = await fetch(url, {
         method: "POST",
-        headers: {
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "content-type": "application/json",
-          "dangerously-allow-browser": "true",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: model || "claude-3-5-haiku-20241022",
-          max_tokens: config.maxTokens || 2048,
-          temperature: config.temperature || 0.7,
-          system: systemPrompt,
-          messages: [{ role: "user", content: userPrompt }],
+          system_instruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: config.temperature || 0.7,
+          },
         }),
       });
 
       if (response.ok) {
         const data = await response.json();
-        const rawText = data?.content?.[0]?.text;
-        if (rawText) cleanJson = rawText;
+        const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (rawText) {
+          cleanJson = rawText;
+          model = currentModel;
+          success = true;
+          break;
+        }
       } else {
-        const errorText = await response.text();
-        console.warn(`[AI Service] Claude error (${response.status}): ${errorText}. Using fallback plan.`);
-        return generateFITTFallbackPlan(profile, exercises, preferences, "Claude Haiku (Offline Engine)");
+        const errData = await response.json().catch(() => null);
+        lastError = errData?.error?.message || `HTTP ${response.status}`;
+        console.warn(`[AI Service] Model ${currentModel} returned ${response.status}: ${lastError}. Trying next lightweight model...`);
       }
-    } catch (err: any) {
-      console.warn(`[AI Service] Claude connection failed: ${err.message}. Using fallback plan.`);
-      return generateFITTFallbackPlan(profile, exercises, preferences, "Claude Haiku (Offline Engine)");
+    } catch (e: any) {
+      lastError = e?.message || "Network error";
     }
+  }
+
+  if (!success) {
+    console.warn(`[AI Service] All Gemini models exceeded quota or failed: ${lastError}. Generating smart FITT fallback plan.`);
+    return generateFITTFallbackPlan(profile, exercises, preferences, "Gemini Flash-Lite (Offline Engine)");
   }
 
   // Extract JSON payload
