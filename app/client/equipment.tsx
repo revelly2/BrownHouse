@@ -26,7 +26,7 @@ import { EquipmentDetailsModal } from "../../components/equipment/EquipmentDetai
 import { Equipment } from "../../lib/types";
 import { Colors, Spacing, Typography, Radius } from "../../constants/colors";
 import { GlassAlert, GlassAlertAction } from "../../components/ui/GlassAlert";
-import { scheduleReservationNotifications } from "../../lib/notifications";
+import { scheduleReservationNotifications, createAndSendNotification, buildReservationDateTime } from "../../lib/notifications";
 import { getLocalDateString } from "../../lib/utils";
 import {
   serializeReservationMetadata,
@@ -404,15 +404,20 @@ export default function EquipmentScreen() {
       setSlotModalVisible(false);
       await fetchEquipment();
       
-      const startDateTime = new Date();
-      const [sh, sm] = selectedSlot.start.split(':').map(Number);
-      startDateTime.setHours(sh, sm, 0, 0);
-      
-      const endDateTime = new Date();
-      const [eh, em] = selectedSlot.end.split(':').map(Number);
-      endDateTime.setHours(eh, em, 0, 0);
+      const startDateTime = buildReservationDateTime(bookingDateStr, selectedSlot.start);
+      const endDateTime = buildReservationDateTime(bookingDateStr, selectedSlot.end);
 
+      // Schedule local Expo device notifications for 5m before start, start, 5m before end, end
       scheduleReservationNotifications(selectedEquipment.name, startDateTime, endDateTime);
+
+      // Save notification to in-app inbox and fire instant alert
+      await createAndSendNotification({
+        clientId: profile.id,
+        title: "Reservation Confirmed 📅",
+        message: `Your booking for ${selectedEquipment.name} on ${bookingDateStr} (${selectedSlot.start} - ${selectedSlot.end}) is confirmed.`,
+        actionUrl: "/client/reservations",
+        type: "booking",
+      });
 
       showAlert(
         "Reservation Confirmed",

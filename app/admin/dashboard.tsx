@@ -31,6 +31,7 @@ import { ToastManager } from "../../components/ui/Toast";
 import { Radius, Colors, Typography, Spacing } from "../../constants/colors";
 import { getLocalDateString } from "../../lib/utils";
 import { doTimeIntervalsOverlap } from "../../lib/reservation-utils";
+import { createAndSendNotification } from "../../lib/notifications";
 import { LineChart, BarChart } from "react-native-chart-kit";
 import {
   Calendar,
@@ -933,6 +934,16 @@ export default function AdminDashboard() {
       if (error) {
         ToastManager.show("Error", error.message, "error");
       } else {
+        const equipObj = (allEquipmentList || []).find((e: any) => e.id === resEquipId);
+        createAndSendNotification({
+          clientId: resClientId,
+          title: "Reservation Confirmed 📅",
+          message: `A booking for ${equipObj?.name || "equipment"} on ${resDate} (${resSlot.start} - ${resSlot.end}) has been scheduled for you by gym staff.`,
+          actionUrl: "/client/reservations",
+          type: "booking",
+          showToast: false,
+        });
+
         ToastManager.show("Success", "Reservation confirmed!", "success");
         setResModalVisible(false);
         fetchStats();

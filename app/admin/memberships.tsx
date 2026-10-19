@@ -30,6 +30,7 @@ import { Icon } from "../../components/ui/Icon";
 import { Colors, Spacing, Typography, Radius } from "../../constants/colors";
 import { ReceiptModal, MembershipReceiptData } from "../../components/membership/ReceiptModal";
 import { ClientMembership, Membership, Payment, Profile } from "../../lib/types";
+import { createAndSendNotification } from "../../lib/notifications";
 
 export default function MembershipsScreen() {
   const { profile } = useAuth();
@@ -255,6 +256,16 @@ export default function MembershipsScreen() {
       if (payError) throw payError;
 
       const client = clients.find((c) => c.id === selectedClientId);
+
+      // Notify the member through in-app notification & push alert
+      await createAndSendNotification({
+        clientId: selectedClientId,
+        title: "Membership Enrolled! 🎖️",
+        message: `Welcome! Your subscription to ${plan.name} is active from ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}. Enjoy unlimited access!`,
+        actionUrl: "/client/profile",
+        type: "membership",
+        showToast: false, // Toast already shown below for admin
+      });
 
       ToastManager.show(
         "Success",

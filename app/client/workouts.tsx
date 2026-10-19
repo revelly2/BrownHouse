@@ -29,6 +29,7 @@ import { WorkoutPlan, CompletedSession } from "../../lib/types";
 import { ToastManager } from "../../components/ui/Toast";
 import { Play, Check, ChevronDown, ChevronUp, Trash2, Zap, Cpu, Sparkles, Bot } from "lucide-react-native";
 import { getAISettings, generateWorkoutPlan, generateFITTFallbackPlan, AIProvider } from "../../lib/ai-service";
+import { notifyWorkoutGenerated } from "../../lib/notifications";
 import { AthleteRunnerVector, KettlebellVector } from "../../components/ui/AthleteVectors";
 
 // ─────────────────────────────────────────────
@@ -349,6 +350,9 @@ export default function WorkoutsScreen() {
           }
         }
 
+        // Notify user via in-app notification inbox & Expo push/local notification
+        await notifyWorkoutGenerated(clientId, planName, true);
+
         showAlert("Success", "AI Plan generated with Google Gemini!");
         fetchData();
       } else {
@@ -391,6 +395,10 @@ export default function WorkoutsScreen() {
               await supabase.from("workout_details").insert(detailsToInsert);
             }
           }
+
+          // Notify user via in-app notification & device
+          await notifyWorkoutGenerated(clientId, fallbackPlan.plan_name, false);
+
           showAlert("Plan Ready", "Generated using intelligent fitness engine (AI quota exhausted).");
           fetchData();
           return;

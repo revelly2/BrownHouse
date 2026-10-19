@@ -1001,12 +1001,25 @@ export default function ClientDashboard() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Recent Club Updates</Text>
           {notifications.slice(0, 3).map((notif) => (
-            <Card key={notif.id} variant="glass" style={styles.notifCard}>
-              <Text style={styles.notifTitle}>{notif.title}</Text>
-              <Text style={styles.notifMessage} numberOfLines={2}>
-                {notif.message}
-              </Text>
-            </Card>
+            <TouchableOpacity
+              key={notif.id}
+              activeOpacity={0.8}
+              onPress={async () => {
+                await supabase.from("notifications").update({ is_read: true }).eq("id", notif.id);
+                if (notif.action_url) {
+                  router.push(notif.action_url as any);
+                } else {
+                  router.push("/client/notifications");
+                }
+              }}
+            >
+              <Card variant="glass" style={styles.notifCard}>
+                <Text style={styles.notifTitle}>{notif.title}</Text>
+                <Text style={styles.notifMessage} numberOfLines={2}>
+                  {notif.message}
+                </Text>
+              </Card>
+            </TouchableOpacity>
           ))}
         </View>
       )}

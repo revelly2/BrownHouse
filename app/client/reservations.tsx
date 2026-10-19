@@ -202,6 +202,15 @@ export default function ReservationsScreen() {
         showAlert("Error", error.message);
       } else {
         await fetchReservations();
+        
+        if (profile?.id) {
+          await sendReservationNotification(
+            profile.id,
+            "Reservation Cancelled",
+            `Your reservation for ${reservation.equipment?.name || "equipment"} on ${reservation.reservation_date} (${reservation.start_time.slice(0, 5)} - ${reservation.end_time.slice(0, 5)}) has been cancelled.`
+          );
+        }
+
         showAlert(
           "Reservation Cancelled",
           isSessionActive
