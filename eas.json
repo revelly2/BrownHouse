@@ -15,7 +15,8 @@
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://npfeowztahepkzoyomky.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wZmVvd3p0YWhlcGt6b3lvbWt5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2OTgyODIsImV4cCI6MjA5ODI3NDI4Mn0.qzqG5t7fSQdBT_0HlMkRm71NJ3bDI1QJHOCx36SyeIE"
-      }
+      },
+      "channel": "preview"
     },
     "production": {}
   },

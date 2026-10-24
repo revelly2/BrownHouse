@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "BrownHouse Fitness",
+    "name": "Brown House",
     "slug": "balneg",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/app-icon.png",
     "userInterfaceStyle": "light",
     "scheme": "gymreserve",
     "ios": {
@@ -13,10 +13,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#6C63FF",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/adaptive-icon-foreground.png"
       },
       "package": "com.balneg.gymreserve",
       "predictiveBackGestureEnabled": false
@@ -28,7 +26,13 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-notifications",
+        {
+          "color": "#E6C84F"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

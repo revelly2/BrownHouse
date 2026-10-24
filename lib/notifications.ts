@@ -198,8 +198,12 @@ export async function createAndSendNotification({
     if (type === 'membership') channelId = 'memberships';
     if (type === 'workout') channelId = 'workouts';
 
-    // 3. Fire immediate local device notification
-    await sendLocalNotification(title, message, { actionUrl, type }, channelId);
+    // 3. Fire immediate local device notification, only when this device belongs to the recipient
+    // (admins notifying a member would otherwise get the member's banner on their own phone)
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (sessionData.session?.user.id === clientId) {
+      await sendLocalNotification(title, message, { actionUrl, type }, channelId);
+    }
 
     // 4. In-app toast if desired
     if (showToast) {

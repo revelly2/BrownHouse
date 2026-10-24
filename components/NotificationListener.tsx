@@ -67,38 +67,46 @@ export function NotificationListener() {
       )
       .subscribe();
 
-    // 5. Handle tapping on an Expo push/local notification banner
-    let responseSubscription: Notifications.Subscription | null = null;
-    if (Platform.OS !== "web") {
-      try {
-        responseSubscription = Notifications.addNotificationResponseReceivedListener(
-          (response) => {
-            const data = response.notification.request.content.data;
-            const targetUrl = data?.actionUrl || data?.action_url;
-            if (targetUrl && typeof targetUrl === "string") {
-              try {
-                router.push(targetUrl as any);
-              } catch (e) {
-                console.warn("[Notifications] Route navigation error:", e);
-              }
-            }
-          }
-        );
-      } catch (e) {
-        console.warn("[Notifications] Listener subscription error:", e);
-      }
-    }
-
     return () => {
       if (sessionIntervalRef.current) {
         clearInterval(sessionIntervalRef.current);
       }
       supabase.removeChannel(channel);
-      if (responseSubscription) {
-        responseSubscription.remove();
-      }
     };
   }, [profile?.id]);
+
+  return Platform.OS === "web" ? null : <NotificationTapHandler />;
+}
+
+// Handles taps on push/local banners, including the tap that cold-starts the app
+function NotificationTapHandler() {
+  const { profile } = useAuth();
+  const response = Notifications.useLastNotificationResponse();
+  const handledIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!response || !profile?.role) return;
+    const id = response.notification.request.identifier;
+    if (handledIdRef.current === id) return;
+    handledIdRef.current = id;
+
+    const data = response.notification.request.content.data;
+    const rawUrl = data?.actionUrl || data?.action_url;
+    const home = profile.role === "admin" ? "/admin/dashboard" : "/client/dashboard";
+    // Only follow links inside the user's own area; an admin opening a /client link renders a blank screen
+    const target =
+      typeof rawUrl === "string" && rawUrl.startsWith(`/${profile.role}/`) ? rawUrl : home;
+
+    // shortcut: fixed delay lets the index <Redirect> settle first; replace with a nav-ready check if taps still misroute
+    const timer = setTimeout(() => {
+      try {
+        router.push(target as any);
+      } catch (e) {
+        console.warn("[Notifications] Route navigation error:", e);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [response, profile?.role]);
 
   return null;
 }
