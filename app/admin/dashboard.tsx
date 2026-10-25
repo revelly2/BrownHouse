@@ -1134,7 +1134,7 @@ export default function AdminDashboard() {
         <View style={[styles.mainGrid, !isDesktop && styles.mainGridMobile]}>
           
           {/* LEFT COLUMN */}
-          <View style={styles.leftColumn}>
+          <View style={[styles.leftColumn, !isDesktop && styles.autoHeight]}>
             
             {/* Chart Section */}
             <FadeInView delay={100} style={styles.chartContainer}>
@@ -1381,7 +1381,7 @@ export default function AdminDashboard() {
               </View>
               <View style={[styles.cardsRow, !isDesktop && styles.cardsRowMobile]}>
                 {recentMembers.map((member) => (
-                  <Card key={member.id} style={styles.memberCard}>
+                  <Card key={member.id} style={[styles.memberCard, !isDesktop && styles.autoHeight]}>
                     <View style={styles.memberCardAvatar}>
                       {member.profile_picture_url ? (
                         <Image 
@@ -1460,7 +1460,7 @@ export default function AdminDashboard() {
             </FadeInView>
 
             {/* Live Logs */}
-            <FadeInView delay={250} style={styles.logsSection}>
+            <FadeInView delay={250} style={[styles.logsSection, !isDesktop && styles.autoHeight]}>
               <View style={styles.sectionHeaderRow}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Text style={styles.sectionTitleSmall}>Live Logs</Text>
@@ -2355,6 +2355,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: Spacing["3xl"],
+  },
+  // flex: 1 collapses height to 0 when columns stack inside the native ScrollView
+  autoHeight: {
+    flexGrow: 0,
+    flexShrink: 0,
+    flexBasis: "auto",
   },
   mainGridMobile: {
     flexDirection: 'column',
