@@ -362,10 +362,10 @@ export default function NotificationsScreen() {
         </View>
 
         <View style={styles.titleRow}>
-          <div>
+          <View>
             <Text style={styles.headerLabel}>Live Updates & Alerts</Text>
             <Text style={styles.pageTitle}>Notifications</Text>
-          </div>
+          </View>
           {unreadCount > 0 && (
             <View style={styles.unreadCountBadge}>
               <Text style={styles.unreadCountText}>{unreadCount} new</Text>
