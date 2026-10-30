@@ -28,7 +28,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { WorkoutPlan, CompletedSession } from "../../lib/types";
 import { ToastManager } from "../../components/ui/Toast";
 import { Play, Check, ChevronDown, ChevronUp, Trash2, Zap, Cpu, Sparkles, Bot } from "lucide-react-native";
-import { getAISettings, generateWorkoutPlan, generateFITTFallbackPlan, AIProvider } from "../../lib/ai-service";
+import { getAISettings, generateWorkoutPlan, generateFITTFallbackPlan, resolveExerciseEquipment, AIProvider } from "../../lib/ai-service";
 import { notifyWorkoutGenerated } from "../../lib/notifications";
 import { AthleteRunnerVector, KettlebellVector } from "../../components/ui/AthleteVectors";
 
@@ -156,7 +156,28 @@ interface UIWorkoutPlan extends WorkoutPlan {
       name: string;
       muscle_group: string;
     } | null;
+    equipment?: { name: string } | null;
   }[];
+}
+
+const planDetailsSelect = (withEquipment: boolean) => `
+  *,
+  workout_details (
+    id, sets, reps, rest_seconds,
+    exercise:exercises ( name, muscle_group )${withEquipment ? ",\n    equipment:equipment_id ( name )" : ""}
+  )
+`;
+
+const isMissingEquipmentColumn = (error: any) =>
+  !!error && /equipment_id|equipment/i.test(`${error.message} ${error.details ?? ""} ${error.hint ?? ""}`);
+
+// shortcut: retries without equipment_id until migration 00019 is applied; remove once the database has the column
+async function insertWorkoutDetails(rows: any[]) {
+  if (rows.length === 0) return;
+  const { error } = await supabase.from("workout_details").insert(rows);
+  if (isMissingEquipmentColumn(error)) {
+    await supabase.from("workout_details").insert(rows.map(({ equipment_id, ...rest }) => rest));
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -212,19 +233,15 @@ export default function WorkoutsScreen() {
 
   const fetchData = async () => {
     if (!profile) return;
-    const [plansRes, sessionsRes] = await Promise.all([
+    const fetchPlans = (select: string) =>
       supabase
         .from("workout_plans")
-        .select(`
-          *,
-          workout_details (
-            id, sets, reps, rest_seconds,
-            exercise:exercises ( name, muscle_group )
-          )
-        `)
+        .select(select)
         .eq("client_id", profile.id)
         .order("creation_date", { ascending: false })
-        .limit(5),
+        .limit(5);
+    const [firstPlansRes, sessionsRes] = await Promise.all([
+      fetchPlans(planDetailsSelect(true)),
       supabase
         .from("completed_sessions")
         .select("*")
@@ -232,7 +249,10 @@ export default function WorkoutsScreen() {
         .order("date", { ascending: false })
         .limit(10),
     ]);
-    if (plansRes.data) setPlans(plansRes.data as UIWorkoutPlan[]);
+    const plansRes = isMissingEquipmentColumn(firstPlansRes.error)
+      ? await fetchPlans(planDetailsSelect(false))
+      : firstPlansRes;
+    if (plansRes.data) setPlans(plansRes.data as unknown as UIWorkoutPlan[]);
     if (sessionsRes.data) setSessions(sessionsRes.data as CompletedSession[]);
     setLoading(false);
   };
@@ -259,7 +279,11 @@ export default function WorkoutsScreen() {
     };
 
     try {
-      const { data: dbExercises } = await supabase.from("exercises").select("id, name, muscle_group");
+      const [{ data: dbExercises }, { data: dbEquipment }] = await Promise.all([
+        supabase.from("exercises").select("id, name, muscle_group"),
+        supabase.from("equipment").select("id, name, muscle_group, status"),
+      ]);
+      const gymEquipment = dbEquipment || [];
       const recentPlanTitles = plans.map(p => p.description || p.goal);
 
       let plan: any = null;
@@ -289,7 +313,8 @@ export default function WorkoutsScreen() {
           dbExercises || [],
           recentPlanTitles,
           preferences,
-          selectedAiProvider
+          selectedAiProvider,
+          gymEquipment
         );
       }
 
@@ -337,6 +362,7 @@ export default function WorkoutsScreen() {
               return {
                 plan_id: planData.id,
                 exercise_id: matchedEx.id,
+                equipment_id: resolveExerciseEquipment(aiEx, gymEquipment)?.id ?? null,
                 sets: aiEx.sets ?? 3,
                 reps: aiEx.reps ?? 10,
                 rest_seconds: aiEx.rest_seconds ?? 60,
@@ -345,9 +371,7 @@ export default function WorkoutsScreen() {
             })
             .filter(Boolean);
 
-          if (detailsToInsert.length > 0) {
-            await supabase.from("workout_details").insert(detailsToInsert);
-          }
+          await insertWorkoutDetails(detailsToInsert);
         }
 
         // Notify user via in-app notification inbox & Expo push/local notification
@@ -361,8 +385,12 @@ export default function WorkoutsScreen() {
     } catch (err: any) {
       console.warn("[AI] Error encountered, activating intelligent FITT fallback:", err);
       try {
-        const { data: dbExercises } = await supabase.from("exercises").select("id, name, muscle_group");
-        const fallbackPlan = generateFITTFallbackPlan(profile, dbExercises || [], preferences, "Intelligent Engine");
+        const [{ data: dbExercises }, { data: dbEquipment }] = await Promise.all([
+          supabase.from("exercises").select("id, name, muscle_group"),
+          supabase.from("equipment").select("id, name, muscle_group, status"),
+        ]);
+        const gymEquipment = dbEquipment || [];
+        const fallbackPlan = generateFITTFallbackPlan(profile, dbExercises || [], preferences, "Intelligent Engine", gymEquipment);
         const clientId = profile?.id ?? user?.id;
         if (clientId) {
           const { data: planData } = await supabase.from("workout_plans").insert({
@@ -384,6 +412,7 @@ export default function WorkoutsScreen() {
               return {
                 plan_id: planData.id,
                 exercise_id: matched.id,
+                equipment_id: resolveExerciseEquipment(ex, gymEquipment)?.id ?? null,
                 sets: ex.sets,
                 reps: ex.reps,
                 rest_seconds: ex.rest_seconds,
@@ -391,9 +420,7 @@ export default function WorkoutsScreen() {
               };
             }).filter(Boolean);
 
-            if (detailsToInsert.length > 0) {
-              await supabase.from("workout_details").insert(detailsToInsert);
-            }
+            await insertWorkoutDetails(detailsToInsert);
           }
 
           // Notify user via in-app notification & device
@@ -729,6 +756,7 @@ export default function WorkoutsScreen() {
                       </Text>
                       <Text style={styles.checklistMeta}>
                         {detail.exercise?.muscle_group ?? ""} • {detail.sets}x{detail.reps}
+                        {detail.equipment?.name ? ` • ${detail.equipment.name}` : ""}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -852,6 +880,7 @@ export default function WorkoutsScreen() {
                           </Text>
                           <Text style={styles.exerciseMuscle}>
                             {detail.exercise?.muscle_group ?? ""}
+                            {detail.equipment?.name ? ` • ${detail.equipment.name}` : ""}
                           </Text>
                         </View>
                         <Text style={styles.exerciseSetsReps}>

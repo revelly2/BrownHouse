@@ -113,6 +113,7 @@ export interface WorkoutDetail {
   id: string;
   plan_id: string;
   exercise_id: string;
+  equipment_id?: string | null;
   sets: number;
   reps: number;
   rest_seconds: number | null;

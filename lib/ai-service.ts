@@ -210,7 +210,8 @@ export async function generateWorkoutPlan(
   exercises: any[],
   recentPlans: string[] = [],
   preferences?: any,
-  providerOverride?: AIProvider
+  providerOverride?: AIProvider,
+  equipment: any[] = []
 ): Promise<any> {
   const config = await getAISettings();
   const provider = "gemini";
@@ -225,6 +226,10 @@ export async function generateWorkoutPlan(
   }
 
   const exerciseNames = exercises.map((e) => e.name).join(", ");
+  const availableEquipmentNames = equipment
+    .filter((eq) => eq.status === "available")
+    .map((eq) => eq.name)
+    .join(", ");
   const bmi =
     profile.height_cm && profile.weight_kg
       ? (profile.weight_kg / Math.pow(profile.height_cm / 100, 2)).toFixed(1)
@@ -249,7 +254,7 @@ Return ONLY a valid JSON object matching this exact schema:
       "sets": number,
       "reps": number,
       "rest_seconds": number,
-      "equipment_needed": null
+      "equipment_needed": "string" | null
     }
   ],
   "notes": "string",
@@ -284,10 +289,13 @@ ${preferencesText}
 
 Available gym exercises: ${exerciseNames}
 
+Available gym equipment: ${availableEquipmentNames || "none listed"}
+
 Rules:
 1. ONLY select from the available gym exercises list above.
 2. Match exercises to the user's goal and requested duration.
-3. Return raw JSON without markdown code fences or backticks.`;
+3. Set "equipment_needed" to the exact name of the gym equipment the exercise uses, copied from the equipment list above. Use null for bodyweight exercises or when no listed equipment fits. Never name equipment that is not in the list.
+4. Return raw JSON without markdown code fences or backticks.`;
 
   let cleanJson = "";
 
@@ -339,7 +347,7 @@ Rules:
 
   if (!success) {
     console.warn(`[AI Service] All Gemini models exceeded quota or failed: ${lastError}. Generating smart FITT fallback plan.`);
-    return generateFITTFallbackPlan(profile, exercises, preferences, "Gemini Flash-Lite (Offline Engine)");
+    return generateFITTFallbackPlan(profile, exercises, preferences, "Gemini Flash-Lite (Offline Engine)", equipment);
   }
 
   // Extract JSON payload
@@ -356,8 +364,56 @@ Rules:
     parsed.ai_model = model;
     return parsed;
   } catch {
-    return generateFITTFallbackPlan(profile, exercises, preferences, "Intelligent FITT Engine");
+    return generateFITTFallbackPlan(profile, exercises, preferences, "Intelligent FITT Engine", equipment);
   }
+}
+
+const EQUIPMENT_STOPWORDS = new Set(["machine", "station", "rack", "adjustable", "flat", "seated"]);
+
+const equipmentTokens = (text: string) =>
+  (text || "")
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter((w) => w.length > 2 && !EQUIPMENT_STOPWORDS.has(w))
+    .map((w) => w.replace(/s$/, ""));
+
+/**
+ * Pick the available gym equipment an exercise uses, by shared name words.
+ * A single shared word only counts when the muscle group also matches ("Barbell Curl" is not the "Leg Curl Machine").
+ */
+export function matchEquipmentForExercise(
+  exercise: { name: string; muscle_group?: string | null },
+  equipment: any[]
+): any | null {
+  const exWords = new Set(equipmentTokens(exercise.name));
+  const exMuscle = (exercise.muscle_group || "").toLowerCase();
+  let best: any = null;
+  let bestScore = 0;
+
+  for (const eq of equipment) {
+    if (eq.status !== "available") continue;
+    const shared = equipmentTokens(eq.name).filter((w) => exWords.has(w)).length;
+    const sameMuscle = !!exMuscle && (eq.muscle_group || "").toLowerCase() === exMuscle;
+    if (shared === 0 || (shared === 1 && !sameMuscle)) continue;
+    const score = shared * 2 + (sameMuscle ? 1 : 0);
+    if (score > bestScore) {
+      best = eq;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+/**
+ * Resolve the AI's "equipment_needed" name to a gym equipment row, falling back to name matching
+ */
+export function resolveExerciseEquipment(
+  aiExercise: { name: string; muscle_group?: string | null; equipment_needed?: string | null },
+  equipment: any[]
+): any | null {
+  const named = (aiExercise.equipment_needed || "").trim().toLowerCase();
+  const exact = named ? equipment.find((eq) => eq.name.toLowerCase() === named) : null;
+  return exact || matchEquipmentForExercise(aiExercise, equipment);
 }
 
 /**
@@ -368,7 +424,8 @@ export function generateFITTFallbackPlan(
   profile: any,
   exercises: any[] = [],
   preferences?: any,
-  sourceLabel: string = "FITT Intelligent Engine"
+  sourceLabel: string = "FITT Intelligent Engine",
+  equipment: any[] = []
 ): any {
   const goal = preferences?.goal || profile?.fitness_goal || "General Fitness";
   const level = (preferences?.level || "Beginner").toLowerCase();
@@ -390,7 +447,7 @@ export function generateFITTFallbackPlan(
     sets: level === "advanced" ? 4 : 3,
     reps: goal.toLowerCase().includes("strength") ? 8 : 12,
     rest_seconds: level === "advanced" ? 45 : 60,
-    equipment_needed: null,
+    equipment_needed: matchEquipmentForExercise(ex, equipment)?.name ?? null,
   }));
 
   return {
