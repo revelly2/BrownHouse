@@ -30,6 +30,8 @@ import { ToastManager } from "../../components/ui/Toast";
 import { Play, Check, ChevronDown, ChevronUp, Trash2, Zap, Cpu, Sparkles, Bot } from "lucide-react-native";
 import { getAISettings, generateWorkoutPlan, generateFITTFallbackPlan, resolveExerciseEquipment, AIProvider } from "../../lib/ai-service";
 import { notifyWorkoutGenerated } from "../../lib/notifications";
+import { getReservationState } from "../../lib/reservation-utils";
+import { getLocalDateString } from "../../lib/utils";
 import { AthleteRunnerVector, KettlebellVector } from "../../components/ui/AthleteVectors";
 
 // ─────────────────────────────────────────────
@@ -156,7 +158,7 @@ interface UIWorkoutPlan extends WorkoutPlan {
       name: string;
       muscle_group: string;
     } | null;
-    equipment?: { name: string } | null;
+    equipment?: { id: string; name: string; status: string } | null;
   }[];
 }
 
@@ -164,7 +166,7 @@ const planDetailsSelect = (withEquipment: boolean) => `
   *,
   workout_details (
     id, sets, reps, rest_seconds,
-    exercise:exercises ( name, muscle_group )${withEquipment ? ",\n    equipment:equipment_id ( name )" : ""}
+    exercise:exercises ( name, muscle_group )${withEquipment ? ",\n    equipment:equipment_id ( id, name, status )" : ""}
   )
 `;
 
@@ -204,6 +206,7 @@ export default function WorkoutsScreen() {
   const lastActionTimeRef = useRef<Date | null>(null);
   const [exerciseTimings, setExerciseTimings] = useState<Record<string, number>>({});
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
+  const [busyEquipmentIds, setBusyEquipmentIds] = useState<Set<string>>(new Set());
 
   // ── AI Engine Selection (Google Gemini) ──
   const selectedAiProvider: AIProvider = "gemini";
@@ -255,6 +258,26 @@ export default function WorkoutsScreen() {
     if (plansRes.data) setPlans(plansRes.data as unknown as UIWorkoutPlan[]);
     if (sessionsRes.data) setSessions(sessionsRes.data as CompletedSession[]);
     setLoading(false);
+    fetchBusyEquipment();
+  };
+
+  // Equipment with a confirmed reservation running right now, same rule the Equipment tab uses
+  const fetchBusyEquipment = async () => {
+    const { data } = await supabase
+      .from("reservations")
+      .select("id, equipment_id, start_time, end_time, reservation_date, status, notes")
+      .eq("reservation_date", getLocalDateString(new Date()))
+      .eq("status", "confirmed");
+    const now = new Date();
+    setBusyEquipmentIds(
+      new Set((data || []).filter((r: any) => getReservationState(r, now).isActive).map((r: any) => r.equipment_id))
+    );
+  };
+
+  const getEquipmentAvailability = (eq: { id: string; status: string }) => {
+    if (eq.status === "maintenance") return { label: "Maintenance", color: Colors.error, bookable: false };
+    if (eq.status === "occupied" || busyEquipmentIds.has(eq.id)) return { label: "In use now", color: Colors.warning, bookable: true };
+    return { label: "Available", color: Colors.success, bookable: true };
   };
 
   useEffect(() => {
@@ -882,10 +905,27 @@ export default function WorkoutsScreen() {
                             {detail.exercise?.muscle_group ?? ""}
                             {detail.equipment?.name ? ` • ${detail.equipment.name}` : ""}
                           </Text>
+                          {detail.equipment && (
+                            <Text style={[styles.equipmentStatus, { color: getEquipmentAvailability(detail.equipment).color }]}>
+                              ● {getEquipmentAvailability(detail.equipment).label}
+                            </Text>
+                          )}
                         </View>
-                        <Text style={styles.exerciseSetsReps}>
-                          {detail.sets}x{detail.reps} ({detail.rest_seconds}s rest)
-                        </Text>
+                        <View style={styles.exerciseRight}>
+                          <Text style={styles.exerciseSetsReps}>
+                            {detail.sets}x{detail.reps} ({detail.rest_seconds}s rest)
+                          </Text>
+                          {detail.equipment && getEquipmentAvailability(detail.equipment).bookable && (
+                            <TouchableOpacity
+                              style={styles.bookEquipmentBtn}
+                              onPress={() => router.push({ pathname: "/client/equipment", params: { book: detail.equipment!.id } })}
+                              accessibilityRole="button"
+                              accessibilityLabel={`Book ${detail.equipment.name}`}
+                            >
+                              <Text style={styles.bookEquipmentText}>Book</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
                       </View>
                     ))}
                   </View>
@@ -1247,6 +1287,27 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.xs,
     fontWeight: "500",
     color: Colors.light.textSecondary,
+  },
+  equipmentStatus: {
+    fontSize: Typography.fontSize.xs,
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  exerciseRight: {
+    alignItems: "flex-end",
+    gap: 6,
+  },
+  bookEquipmentBtn: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  bookEquipmentText: {
+    fontSize: Typography.fontSize.xs,
+    fontWeight: "700",
+    color: Colors.primary,
   },
   useForTodayButton: { marginTop: Spacing.md },
 

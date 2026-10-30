@@ -16,7 +16,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
 import { Input } from "../../components/ui/Input";
@@ -247,6 +247,20 @@ export default function EquipmentScreen() {
     await fetchEquipment();
     setRefreshing(false);
   };
+
+  // Opened from a workout plan's "Book" button: jump straight to that machine's slot picker
+  const { book } = useLocalSearchParams<{ book?: string }>();
+  useEffect(() => {
+    if (!book || equipment.length === 0) return;
+    router.setParams({ book: undefined });
+    const target = equipment.find((item) => item.id === book);
+    if (!target) return;
+    if (target.status === "maintenance") {
+      showAlert("Under Maintenance", `${target.name} is under maintenance and can't be booked right now.`);
+      return;
+    }
+    handleReserve(target);
+  }, [book, equipment]);
 
   const loadSlotsForDate = async (item: EquipmentWithLiveStatus, targetDateStr: string) => {
     const isToday = targetDateStr === getLocalDateString(new Date());
