@@ -16,6 +16,11 @@ interface UserProfile {
   height_cm: number | null;
   weight_kg: number | null;
   fitness_goal: string | null;
+  age: number | null;
+  gender: string | null;
+  health_conditions: string[] | null;
+  health_notes: string | null;
+  health_screened_at: string | null;
   role: string;
 }
 
@@ -140,6 +145,20 @@ function buildFallbackPlan(
   };
 }
 
+// ---- Health screening (mirrors lib/health-profile.ts in the app) ----
+
+function healthSafetyText(profile: UserProfile): string {
+  if (!profile.health_screened_at) return "";
+  const conditions = profile.health_conditions ?? [];
+  const lines = [
+    profile.age ? `- Age: ${profile.age} years` : null,
+    profile.gender ? `- Gender: ${profile.gender.replace(/_/g, " ")}` : null,
+    `- Health conditions (current or past): ${conditions.length ? conditions.join("; ") : "none reported"}`,
+    profile.health_notes ? `- Health details from the member: ${profile.health_notes}` : null,
+  ].filter(Boolean);
+  return `\nHEALTH AND SAFETY (must be respected):\n${lines.join("\n")}\n- If any condition or age-related risk is listed, choose a lower intensity, avoid max-effort lifts and movements that stress the listed condition, add a rest day, and state the precautions and when to stop or see a doctor in "notes". Do not diagnose.`;
+}
+
 // ---- AI API Integration (Google Gemini) ----
 
 async function generateWithAI(
@@ -207,6 +226,7 @@ You MUST adhere exactly to these constraints in your generated FITT plan:
 - Weight: ${profile.weight_kg ?? "not provided"} kg
 - BMI: ${bmi}
 - Overall Profile Goal: ${profile.fitness_goal ?? "General fitness"}
+${healthSafetyText(profile)}
 ${recentPlansText}
 ${preferencesText}
 

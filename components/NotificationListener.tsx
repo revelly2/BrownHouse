@@ -1,10 +1,12 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import { Platform } from "react-native";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
 import { ToastManager } from "./ui/Toast";
+import { GlassAlert } from "./ui/GlassAlert";
+import { hasCompletedHealthScreening } from "../lib/health-profile";
 import {
   registerForPushNotificationsAsync,
   sendLocalNotification,
@@ -15,6 +17,18 @@ import {
 export function NotificationListener() {
   const { profile } = useAuth();
   const sessionIntervalRef = useRef<any>(null);
+  const [healthPromptVisible, setHealthPromptVisible] = useState(false);
+  const healthPromptedForRef = useRef<string | null>(null);
+
+  // Members who never filled in the health screening get a reminder once per app launch
+  useEffect(() => {
+    if (!profile?.id || profile.role !== "client" || hasCompletedHealthScreening(profile)) return;
+    if (healthPromptedForRef.current === profile.id) return;
+    healthPromptedForRef.current = profile.id;
+    // Short delay so the dashboard is on screen before the alert appears
+    const timer = setTimeout(() => setHealthPromptVisible(true), 1500);
+    return () => clearTimeout(timer);
+  }, [profile?.id, profile?.role, profile?.health_screened_at]);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -75,7 +89,27 @@ export function NotificationListener() {
     };
   }, [profile?.id]);
 
-  return Platform.OS === "web" ? null : <NotificationTapHandler />;
+  return (
+    <>
+      <GlassAlert
+        visible={healthPromptVisible}
+        title="Complete your health details"
+        message="Add your age, gender and any health history so your AI workout plans are safe for you. It takes about a minute."
+        actions={[
+          { text: "Later", style: "cancel", onPress: () => setHealthPromptVisible(false) },
+          {
+            text: "Fill in now",
+            onPress: () => {
+              setHealthPromptVisible(false);
+              router.push({ pathname: "/client/profile", params: { health: "1" } });
+            },
+          },
+        ]}
+        onDismiss={() => setHealthPromptVisible(false)}
+      />
+      {Platform.OS === "web" ? null : <NotificationTapHandler />}
+    </>
+  );
 }
 
 // Handles taps on push/local banners, including the tap that cold-starts the app

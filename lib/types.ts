@@ -27,6 +27,11 @@ export interface Profile {
   weight_kg: number | null;
   target_weight_kg: number | null;
   fitness_goal: string | null;
+  age: number | null;
+  gender: "male" | "female" | "other" | "prefer_not_to_say" | null;
+  health_conditions: string[];
+  health_notes: string | null;
+  health_screened_at: string | null;
   role: UserRole;
   created_at: string;
   updated_at: string;

@@ -4,6 +4,7 @@
 
 import { supabase } from "./supabase";
 import { Platform } from "react-native";
+import { healthPromptLines, needsCautiousPlan } from "./health-profile";
 
 export type AIProvider = "gemini";
 
@@ -284,6 +285,7 @@ Return ONLY a valid JSON object matching this exact schema:
 - Weight: ${profile.weight_kg ?? "not set"} kg
 - BMI: ${bmi}
 - Goal: ${profile.fitness_goal ?? "General Fitness"}
+${healthPromptLines(profile)}
 ${recentPlansText}
 ${preferencesText}
 
@@ -441,12 +443,14 @@ export function generateFITTFallbackPlan(
     { name: "Lunges", muscle_group: "Legs" },
   ];
 
+  // shortcut: rule-based intensity only; the AI path reads the full health screening itself
+  const cautious = needsCautiousPlan(profile);
   const selectedEx = pool.slice(0, 5).map((ex) => ({
     name: ex.name,
     muscle_group: ex.muscle_group || "Full Body",
-    sets: level === "advanced" ? 4 : 3,
-    reps: goal.toLowerCase().includes("strength") ? 8 : 12,
-    rest_seconds: level === "advanced" ? 45 : 60,
+    sets: level === "advanced" && !cautious ? 4 : 3,
+    reps: goal.toLowerCase().includes("strength") && !cautious ? 8 : 12,
+    rest_seconds: (level === "advanced" && !cautious ? 45 : 60) + (cautious ? 15 : 0),
     equipment_needed: matchEquipmentForExercise(ex, equipment)?.name ?? null,
   }));
 
@@ -456,12 +460,14 @@ export function generateFITTFallbackPlan(
     goal,
     fitt: {
       frequency: `${daysPerWeek}/week`,
-      intensity: level === "advanced" ? "High" : "Moderate",
+      intensity: cautious ? "Low to moderate" : level === "advanced" ? "High" : "Moderate",
       time: sessionLength,
       type: "Strength & Conditioning",
     },
     exercises: selectedEx,
-    notes: "Personalized based on your profile and fitness targets.",
+    notes: cautious
+      ? "Lower intensity because of your health screening. Stop if you feel chest pain, dizziness or unusual breathlessness, and check with your doctor before starting."
+      : "Personalized based on your profile and fitness targets.",
     ai_provider: "gemini",
     ai_model: "gemini-flash-lite",
     generated_at: new Date().toISOString(),

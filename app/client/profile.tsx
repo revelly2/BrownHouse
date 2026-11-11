@@ -17,7 +17,13 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
+import { Profile } from "../../lib/types";
+import {
+  GENDER_OPTIONS,
+  HEALTH_CONDITION_OPTIONS,
+  hasCompletedHealthScreening,
+} from "../../lib/health-profile";
 import { useAuth } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
 import { Card } from "../../components/ui/Card";
@@ -53,6 +59,56 @@ export default function ProfileScreen() {
     target_weight_kg: profile?.target_weight_kg?.toString() ?? "",
     fitness_goal: profile?.fitness_goal ?? "",
   });
+
+  // ── Health & personal details ──
+  // Opened from the "fill in your health details" login prompt with ?health=1
+  const { health } = useLocalSearchParams<{ health?: string }>();
+  const [healthEditing, setHealthEditing] = useState(false);
+  const [healthSaving, setHealthSaving] = useState(false);
+  const [healthError, setHealthError] = useState<string | null>(null);
+  const [healthForm, setHealthForm] = useState({
+    age: profile?.age?.toString() ?? "",
+    gender: (profile?.gender ?? null) as string | null,
+    hasConditions: hasCompletedHealthScreening(profile) ? (profile?.health_conditions?.length ?? 0) > 0 : (null as boolean | null),
+    conditions: profile?.health_conditions ?? ([] as string[]),
+    notes: profile?.health_notes ?? "",
+  });
+
+  useEffect(() => {
+    if (health && !hasCompletedHealthScreening(profile)) setHealthEditing(true);
+  }, [health, profile?.health_screened_at]);
+
+  const toggleCondition = (condition: string) =>
+    setHealthForm((f) => ({
+      ...f,
+      conditions: f.conditions.includes(condition)
+        ? f.conditions.filter((c) => c !== condition)
+        : [...f.conditions, condition],
+    }));
+
+  const saveHealth = async () => {
+    setHealthError(null);
+    const age = parseInt(healthForm.age, 10);
+    if (!age || age < 10 || age > 100) return setHealthError("Enter an age between 10 and 100.");
+    if (!healthForm.gender) return setHealthError("Choose your gender.");
+    if (healthForm.hasConditions === null) return setHealthError("Answer the health question (Yes or No).");
+    if (healthForm.hasConditions && healthForm.conditions.length === 0) {
+      return setHealthError("Select at least one condition, or choose No.");
+    }
+
+    setHealthSaving(true);
+    const { error } = await updateProfile({
+      age,
+      gender: healthForm.gender as Profile["gender"],
+      health_conditions: healthForm.hasConditions ? healthForm.conditions : [],
+      health_notes: healthForm.hasConditions && healthForm.notes.trim() ? healthForm.notes.trim() : null,
+      // Stamped even for "No", so the login reminder stops once the member has answered
+      health_screened_at: new Date().toISOString(),
+    });
+    setHealthSaving(false);
+    if (error) return setHealthError(error.message);
+    setHealthEditing(false);
+  };
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -458,6 +514,129 @@ export default function ProfileScreen() {
         )}
       </Card>
 
+      {/* Health & Personal Details — used to make AI workout plans safer */}
+      <Card variant="glass" style={styles.formCard}>
+        <View style={styles.formHeader}>
+          <Text style={styles.formTitle}>Health & Personal Details</Text>
+          <TouchableOpacity
+            style={styles.editBtn}
+            onPress={() => setHealthEditing(!healthEditing)}
+          >
+            <Text style={styles.editBtnText}>{healthEditing ? "Cancel" : "Edit"}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {!hasCompletedHealthScreening(profile) && !healthEditing && (
+          <Text style={styles.healthNotice}>
+            Not filled in yet. Add your age, gender and health history so your AI workout plans stay safe for you.
+          </Text>
+        )}
+
+        {healthEditing ? (
+          <>
+            <Input
+              label="Age"
+              value={healthForm.age}
+              onChangeText={(v) => setHealthForm({ ...healthForm, age: v })}
+              keyboardType="number-pad"
+            />
+
+            <Text style={styles.healthLabel}>Gender</Text>
+            <View style={styles.chipRow}>
+              {GENDER_OPTIONS.map((g) => {
+                const selected = healthForm.gender === g.value;
+                return (
+                  <TouchableOpacity
+                    key={g.value}
+                    style={[styles.chip, selected && styles.chipActive]}
+                    onPress={() => setHealthForm({ ...healthForm, gender: g.value })}
+                  >
+                    <Text style={[styles.chipText, selected && styles.chipTextActive]}>{g.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={styles.healthLabel}>
+              Do you have, or have you had, a health condition (for example heart disease, high blood pressure, diabetes, an injury)?
+            </Text>
+            <View style={styles.chipRow}>
+              {[
+                { label: "No", value: false },
+                { label: "Yes", value: true },
+              ].map((opt) => {
+                const selected = healthForm.hasConditions === opt.value;
+                return (
+                  <TouchableOpacity
+                    key={opt.label}
+                    style={[styles.chip, selected && styles.chipActive]}
+                    onPress={() => setHealthForm({ ...healthForm, hasConditions: opt.value })}
+                  >
+                    <Text style={[styles.chipText, selected && styles.chipTextActive]}>{opt.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {healthForm.hasConditions === true && (
+              <>
+                <Text style={styles.healthLabel}>Select all that apply</Text>
+                <View style={styles.chipRow}>
+                  {HEALTH_CONDITION_OPTIONS.map((c) => {
+                    const selected = healthForm.conditions.includes(c);
+                    return (
+                      <TouchableOpacity
+                        key={c}
+                        style={[styles.chip, selected && styles.chipActive]}
+                        onPress={() => toggleCondition(c)}
+                      >
+                        <Text style={[styles.chipText, selected && styles.chipTextActive]}>{c}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                <Input
+                  label="Details (optional)"
+                  value={healthForm.notes}
+                  onChangeText={(v) => setHealthForm({ ...healthForm, notes: v })}
+                  placeholder="e.g. stent placed in 2021, takes blood pressure medication, knee surgery in 2024"
+                  multiline
+                />
+              </>
+            )}
+
+            {healthError && <Text style={styles.healthErrorText}>{healthError}</Text>}
+
+            <Button
+              title={healthSaving ? "Saving..." : "Save Health Details"}
+              onPress={saveHealth}
+              loading={healthSaving}
+              disabled={healthSaving}
+              style={{ marginTop: Spacing.lg }}
+            />
+          </>
+        ) : (
+          <View>
+            <InfoRow label="Age" value={profile?.age ? `${profile.age} years` : "Not set"} />
+            <InfoRow
+              label="Gender"
+              value={GENDER_OPTIONS.find((g) => g.value === profile?.gender)?.label ?? "Not set"}
+            />
+            <InfoRow
+              label="Health conditions"
+              value={
+                !hasCompletedHealthScreening(profile)
+                  ? "Not set"
+                  : profile?.health_conditions?.length
+                    ? profile.health_conditions.join(", ")
+                    : "None reported"
+              }
+            />
+            <InfoRow label="Details" value={profile?.health_notes ?? "—"} isLast />
+          </View>
+        )}
+      </Card>
+
       {/* Quick Update — Weight & Height */}
       <Card variant="glass" style={styles.quickUpdateCard}>
         <Text style={styles.quickUpdateTitle}>Quick Update</Text>
@@ -789,6 +968,48 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   infoGrid: {},
+  healthNotice: {
+    fontSize: 12,
+    color: Colors.warning || "#F59E0B",
+    marginBottom: Spacing.md,
+  },
+  healthErrorText: {
+    color: Colors.error || "#EF4444",
+    fontSize: 12,
+    marginTop: Spacing.sm,
+  },
+  healthLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.light.textSecondary,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.xs,
+  },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.sm,
+  },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: "rgba(255, 255, 255, 0.03)",
+  },
+  chipActive: {
+    borderColor: Colors.primary,
+    backgroundColor: "rgba(251, 191, 36, 0.12)",
+  },
+  chipText: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    fontWeight: "600",
+  },
+  chipTextActive: {
+    color: Colors.primary,
+  },
   quickUpdateCard: {
     marginBottom: Spacing.xl,
   },
