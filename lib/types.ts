@@ -109,6 +109,7 @@ export interface WorkoutPlan {
   fitt_intensity: string | null;
   fitt_time: string | null;
   fitt_type: string | null;
+  notes?: string | null;
   is_ai_generated: boolean;
   created_at: string;
   updated_at: string;
@@ -119,6 +120,7 @@ export interface WorkoutDetail {
   plan_id: string;
   exercise_id: string;
   equipment_id?: string | null;
+  duration_minutes?: number | null;
   sets: number;
   reps: number;
   rest_seconds: number | null;

@@ -31,7 +31,7 @@ import { Play, Check, ChevronDown, ChevronUp, Trash2, Zap, Cpu, Sparkles, Bot } 
 import { getAISettings, generateWorkoutPlan, generateFITTFallbackPlan, resolveExerciseEquipment, AIProvider } from "../../lib/ai-service";
 import { notifyWorkoutGenerated } from "../../lib/notifications";
 import { getReservationState } from "../../lib/reservation-utils";
-import { getLocalDateString } from "../../lib/utils";
+import { getLocalDateString, estimateWorkoutMinutes } from "../../lib/utils";
 import { AthleteRunnerVector, KettlebellVector } from "../../components/ui/AthleteVectors";
 
 // ─────────────────────────────────────────────
@@ -154,6 +154,7 @@ interface UIWorkoutPlan extends WorkoutPlan {
     sets: number;
     reps: number;
     rest_seconds: number | null;
+    duration_minutes?: number | null;
     exercise: {
       name: string;
       muscle_group: string;
@@ -162,25 +163,29 @@ interface UIWorkoutPlan extends WorkoutPlan {
   }[];
 }
 
-const planDetailsSelect = (withEquipment: boolean) => `
+const planDetailsSelect = (withNewColumns: boolean) => `
   *,
   workout_details (
     id, sets, reps, rest_seconds,
-    exercise:exercises ( name, muscle_group )${withEquipment ? ",\n    equipment:equipment_id ( id, name, status )" : ""}
+    exercise:exercises ( name, muscle_group )${withNewColumns ? ",\n    duration_minutes,\n    equipment:equipment_id ( id, name, status )" : ""}
   )
 `;
 
-const isMissingEquipmentColumn = (error: any) =>
-  !!error && /equipment_id|equipment/i.test(`${error.message} ${error.details ?? ""} ${error.hint ?? ""}`);
+const isMissingNewColumn = (error: any) =>
+  !!error && /equipment_id|equipment|duration_minutes/i.test(`${error.message} ${error.details ?? ""} ${error.hint ?? ""}`);
 
-// shortcut: retries without equipment_id until migration 00019 is applied; remove once the database has the column
+// shortcut: retries without the 00019/00021 columns until those migrations are applied; remove once the database has them
 async function insertWorkoutDetails(rows: any[]) {
   if (rows.length === 0) return;
   const { error } = await supabase.from("workout_details").insert(rows);
-  if (isMissingEquipmentColumn(error)) {
-    await supabase.from("workout_details").insert(rows.map(({ equipment_id, ...rest }) => rest));
+  if (isMissingNewColumn(error)) {
+    await supabase.from("workout_details").insert(rows.map(({ equipment_id, duration_minutes, ...rest }) => rest));
   }
 }
+
+// A timed exercise shows its minutes; strength work shows sets x reps
+const exerciseDose = (d: { sets: number; reps: number; rest_seconds: number | null; duration_minutes?: number | null }) =>
+  d.duration_minutes ? `${d.duration_minutes} min` : `${d.sets}x${d.reps} (${d.rest_seconds ?? 0}s rest)`;
 
 // ─────────────────────────────────────────────
 // Component
@@ -252,7 +257,7 @@ export default function WorkoutsScreen() {
         .order("date", { ascending: false })
         .limit(10),
     ]);
-    const plansRes = isMissingEquipmentColumn(firstPlansRes.error)
+    const plansRes = isMissingNewColumn(firstPlansRes.error)
       ? await fetchPlans(planDetailsSelect(false))
       : firstPlansRes;
     if (plansRes.data) setPlans(plansRes.data as unknown as UIWorkoutPlan[]);
@@ -363,6 +368,7 @@ export default function WorkoutsScreen() {
             fitt_intensity: plan.fitt?.intensity || "Moderate",
             fitt_time: plan.fitt?.time || "45 minutes",
             fitt_type: plan.fitt?.type || "General Fitness",
+            notes: plan.notes || null,
             is_ai_generated: true,
           })
           .select()
@@ -389,6 +395,7 @@ export default function WorkoutsScreen() {
                 sets: aiEx.sets ?? 3,
                 reps: aiEx.reps ?? 10,
                 rest_seconds: aiEx.rest_seconds ?? 60,
+                duration_minutes: aiEx.duration_minutes || null,
                 ordering: index,
               };
             })
@@ -425,6 +432,7 @@ export default function WorkoutsScreen() {
             fitt_intensity: fallbackPlan.fitt.intensity,
             fitt_time: fallbackPlan.fitt.time,
             fitt_type: fallbackPlan.fitt.type,
+            notes: fallbackPlan.notes,
             is_ai_generated: true,
           }).select().single();
 
@@ -439,6 +447,7 @@ export default function WorkoutsScreen() {
                 sets: ex.sets,
                 reps: ex.reps,
                 rest_seconds: ex.rest_seconds,
+                duration_minutes: ex.duration_minutes || null,
                 ordering: idx,
               };
             }).filter(Boolean);
@@ -778,7 +787,7 @@ export default function WorkoutsScreen() {
                         {detail.exercise?.name ?? "Exercise"}
                       </Text>
                       <Text style={styles.checklistMeta}>
-                        {detail.exercise?.muscle_group ?? ""} • {detail.sets}x{detail.reps}
+                        {detail.exercise?.muscle_group ?? ""} • {detail.duration_minutes ? `${detail.duration_minutes} min` : `${detail.sets}x${detail.reps}`}
                         {detail.equipment?.name ? ` • ${detail.equipment.name}` : ""}
                       </Text>
                     </View>
@@ -883,11 +892,23 @@ export default function WorkoutsScreen() {
                     <View style={styles.fittItem}>
                       <Text style={styles.fittLabel}>Time</Text>
                       <Text style={styles.fittValue}>{plan.fitt_time}</Text>
+                      {!!plan.workout_details?.length && (
+                        <Text style={styles.fittEstimate}>
+                          ≈ {estimateWorkoutMinutes(plan.workout_details)} min planned
+                        </Text>
+                      )}
                     </View>
                     <View style={styles.fittItem}>
                       <Text style={styles.fittLabel}>Type</Text>
                       <Text style={styles.fittValue}>{plan.fitt_type}</Text>
                     </View>
+                  </View>
+                )}
+
+                {!!plan.notes && (
+                  <View style={styles.planNotes}>
+                    <Text style={styles.fittLabel}>Why this plan fits you</Text>
+                    <Text style={styles.planNotesText}>{plan.notes}</Text>
                   </View>
                 )}
 
@@ -913,7 +934,7 @@ export default function WorkoutsScreen() {
                         </View>
                         <View style={styles.exerciseRight}>
                           <Text style={styles.exerciseSetsReps}>
-                            {detail.sets}x{detail.reps} ({detail.rest_seconds}s rest)
+                            {exerciseDose(detail)}
                           </Text>
                           {detail.equipment && getEquipmentAvailability(detail.equipment).bookable && (
                             <TouchableOpacity
@@ -1244,6 +1265,23 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.sm,
     color: Colors.light.text,
     fontWeight: "500",
+  },
+  fittEstimate: {
+    fontSize: Typography.fontSize.xs,
+    color: Colors.light.textTertiary,
+    marginTop: 2,
+  },
+  planNotes: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.light.borderLight,
+    marginTop: Spacing.sm,
+    paddingTop: Spacing.md,
+    paddingHorizontal: Spacing.sm,
+  },
+  planNotesText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.light.textSecondary,
+    lineHeight: 20,
   },
 
   exercisesList: {

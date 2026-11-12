@@ -37,6 +37,7 @@ interface ExerciseRecommendation {
   sets: number;
   reps: number;
   rest_seconds: number;
+  duration_minutes?: number | null;
   equipment_needed: string | null;
 }
 
@@ -199,7 +200,7 @@ async function generateWithAI(
   "difficulty": "beginner" | "advanced",
   "goal": "string",
   "fitt": { "frequency": "string", "intensity": "string", "time": "string", "type": "string" },
-  "exercises": [{ "name": "string", "muscle_group": "string", "sets": number, "reps": number, "rest_seconds": number, "equipment_needed": "string|null" }],
+  "exercises": [{ "name": "string", "muscle_group": "string", "sets": number, "reps": number, "rest_seconds": number, "duration_minutes": "number|null", "equipment_needed": "string|null" }],
   "notes": "string",
   "generated_at": "ISO timestamp"
 }`;
@@ -226,6 +227,8 @@ You MUST adhere exactly to these constraints in your generated FITT plan:
 - Weight: ${profile.weight_kg ?? "not provided"} kg
 - BMI: ${bmi}
 - Overall Profile Goal: ${profile.fitness_goal ?? "General fitness"}
+- Target Weight: ${(profile as any).target_weight_kg ? `${(profile as any).target_weight_kg} kg` : "not set"}
+- Experience Level: ${(profile as any).experience_level ?? "not set"}
 ${healthSafetyText(profile)}
 ${recentPlansText}
 ${preferencesText}
@@ -233,7 +236,12 @@ ${preferencesText}
 Available exercises in our gym: ${exerciseNames}
 
 Generate a balanced, safe plan using only the exercises listed above. Prioritize exercises matching the user's goal.
-CRITICAL: If strict user preferences are provided above, your JSON output MUST perfectly match their requested frequency, time, difficulty, and goal!`;
+CRITICAL: If strict user preferences are provided above, your JSON output MUST perfectly match their requested frequency, time, difficulty, and goal!
+
+Rules (same as lib/ai-service.ts in the app; keep both in sync):
+- Cardio or timed exercises (treadmill, bike, rowing): set "duration_minutes" (e.g. 10) with sets 1, reps 1, rest_seconds 0. Strength exercises: "duration_minutes" null.
+- The exercises MUST fill the requested session length. Count each strength exercise as sets x (reps x 3 seconds + rest_seconds) plus 1 minute to change machines, add the cardio minutes, and start with a 5-minute cardio warm-up when a cardio machine is available. The total must land within 5 minutes of the session length.
+- "notes" is 2-4 sentences written to the member as "you": first say how their age, BMI, weight goal and health conditions shaped this plan, then the precautions to follow.`;
 
   try {
     let finalUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;

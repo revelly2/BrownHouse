@@ -203,6 +203,11 @@ export async function testAIConnection(
   }
 }
 
+// Same rules are in supabase/functions/ai-recommendation/index.ts; keep both in sync
+const PLAN_TIME_AND_NOTES_RULES = `4. Cardio or timed exercises (treadmill, bike, rowing): set "duration_minutes" (e.g. 10) with sets 1, reps 1, rest_seconds 0. Strength exercises: "duration_minutes" null.
+5. The exercises MUST fill the requested session length. Count each strength exercise as sets x (reps x 3 seconds + rest_seconds) plus 1 minute to change machines, add the cardio minutes, and start with a 5-minute cardio warm-up when a cardio machine is available. The total must land within 5 minutes of the session length.
+6. "notes" is 2-4 sentences written to the member as "you": first say how their age, BMI, weight goal and health conditions shaped this plan, then the precautions to follow.`;
+
 /**
  * Generate a personalized FITT Workout Plan using Google Gemini
  */
@@ -255,6 +260,7 @@ Return ONLY a valid JSON object matching this exact schema:
       "sets": number,
       "reps": number,
       "rest_seconds": number,
+      "duration_minutes": number | null,
       "equipment_needed": "string" | null
     }
   ],
@@ -285,6 +291,8 @@ Return ONLY a valid JSON object matching this exact schema:
 - Weight: ${profile.weight_kg ?? "not set"} kg
 - BMI: ${bmi}
 - Goal: ${profile.fitness_goal ?? "General Fitness"}
+- Target Weight: ${profile.target_weight_kg ? `${profile.target_weight_kg} kg` : "not set"}
+- Experience Level: ${profile.experience_level ?? "not set"}
 ${healthPromptLines(profile)}
 ${recentPlansText}
 ${preferencesText}
@@ -297,7 +305,8 @@ Rules:
 1. ONLY select from the available gym exercises list above.
 2. Match exercises to the user's goal and requested duration.
 3. Set "equipment_needed" to the exact name of the gym equipment the exercise uses, copied from the equipment list above. Use null for bodyweight exercises or when no listed equipment fits. Never name equipment that is not in the list.
-4. Return raw JSON without markdown code fences or backticks.`;
+${PLAN_TIME_AND_NOTES_RULES}
+7. Return raw JSON without markdown code fences or backticks.`;
 
   let cleanJson = "";
 
@@ -445,14 +454,28 @@ export function generateFITTFallbackPlan(
 
   // shortcut: rule-based intensity only; the AI path reads the full health screening itself
   const cautious = needsCautiousPlan(profile);
-  const selectedEx = pool.slice(0, 5).map((ex) => ({
-    name: ex.name,
-    muscle_group: ex.muscle_group || "Full Body",
-    sets: level === "advanced" && !cautious ? 4 : 3,
-    reps: goal.toLowerCase().includes("strength") && !cautious ? 8 : 12,
-    rest_seconds: (level === "advanced" && !cautious ? 45 : 60) + (cautious ? 15 : 0),
-    equipment_needed: matchEquipmentForExercise(ex, equipment)?.name ?? null,
-  }));
+  const selectedEx = pool.slice(0, 5).map((ex) => {
+    const isCardio = (ex.muscle_group || "").toLowerCase() === "cardio";
+    return {
+      name: ex.name,
+      muscle_group: ex.muscle_group || "Full Body",
+      sets: isCardio ? 1 : level === "advanced" && !cautious ? 4 : 3,
+      reps: isCardio ? 1 : goal.toLowerCase().includes("strength") && !cautious ? 8 : 12,
+      rest_seconds: isCardio ? 0 : (level === "advanced" && !cautious ? 45 : 60) + (cautious ? 15 : 0),
+      duration_minutes: isCardio ? 10 : null,
+      equipment_needed: matchEquipmentForExercise(ex, equipment)?.name ?? null,
+    };
+  });
+
+  const bmi = profile?.height_cm && profile?.weight_kg
+    ? (profile.weight_kg / Math.pow(profile.height_cm / 100, 2)).toFixed(1)
+    : null;
+  const factors = [
+    profile?.age ? `age ${profile.age}` : null,
+    bmi ? `BMI ${bmi}` : null,
+    ...(profile?.health_conditions ?? []),
+  ].filter(Boolean);
+  const basedOn = factors.length ? `Based on your ${factors.join(", ")}. ` : "";
 
   return {
     plan_name: `${goal} — ${level === "advanced" ? "Advanced" : "Foundation"} (${sourceLabel})`,
@@ -465,9 +488,9 @@ export function generateFITTFallbackPlan(
       type: "Strength & Conditioning",
     },
     exercises: selectedEx,
-    notes: cautious
-      ? "Lower intensity because of your health screening. Stop if you feel chest pain, dizziness or unusual breathlessness, and check with your doctor before starting."
-      : "Personalized based on your profile and fitness targets.",
+    notes: basedOn + (cautious
+      ? "Intensity is kept lower for safety. Stop if you feel chest pain, dizziness or unusual breathlessness, and check with your doctor before starting."
+      : "Personalized for your fitness targets."),
     ai_provider: "gemini",
     ai_model: "gemini-flash-lite",
     generated_at: new Date().toISOString(),
