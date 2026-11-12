@@ -29,7 +29,7 @@ import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Colors, Spacing, Typography, Radius } from "../../constants/colors";
-import { formatTime, getLocalDateString } from "../../lib/utils";
+import { formatTime, getLocalDateString, interpretWeightTrend } from "../../lib/utils";
 import { Reservation, Notification as AppNotification, WorkoutPlan, Equipment } from "../../lib/types";
 import { router } from "expo-router";
 import { getReservationState, serializeReservationMetadata } from "../../lib/reservation-utils";
@@ -522,26 +522,35 @@ export default function ClientDashboard() {
     });
 
     const data = weightHistory.map((h) => h.weight_kg);
-    const targetData = weightHistory.map(() => profile?.target_weight_kg ?? data[0]);
+    const actual = {
+      data,
+      color: (opacity = 1) => `rgba(251, 191, 36, ${opacity})`,
+      strokeWidth: 3,
+    };
+    // Without a saved target there is no target line (it used to fake one at the first weigh-in)
+    const target = profile?.target_weight_kg;
+    if (!target) return { labels, datasets: [actual], legend: ["Actual"] };
 
     return {
       labels,
       datasets: [
         {
-          data: targetData,
+          data: weightHistory.map(() => target),
           color: (opacity = 1) => `rgba(251, 191, 36, ${opacity * 0.7})`,
           strokeWidth: 2,
           withDots: false,
         },
-        {
-          data,
-          color: (opacity = 1) => `rgba(251, 191, 36, ${opacity})`,
-          strokeWidth: 3,
-        },
+        actual,
       ],
       legend: ["Target", "Actual"],
     };
   };
+
+  const weightTrend = interpretWeightTrend(
+    weightHistory,
+    profile?.target_weight_kg ?? null,
+    profile?.height_cm ?? null
+  );
 
   const handlePointClick = (index: number) => {
     const point = weightHistory[index];
@@ -974,6 +983,15 @@ export default function ClientDashboard() {
                   </View>
                 </View>
               )}
+              {weightTrend && (
+                <View style={styles.trendInsight}>
+                  <Text style={styles.trendInsightLabel}>Progress</Text>
+                  <Text style={styles.trendInsightHeadline}>{weightTrend.headline}</Text>
+                  {weightTrend.details.map((line) => (
+                    <Text key={line} style={styles.trendInsightDetail}>• {line}</Text>
+                  ))}
+                </View>
+              )}
             </>
           ) : (
             <View style={styles.emptyChart}>
@@ -1400,6 +1418,31 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
     borderTopWidth: 1,
     borderTopColor: "rgba(255, 255, 255, 0.06)",
+  },
+  trendInsight: {
+    marginTop: Spacing.md,
+    paddingTop: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.06)",
+    gap: 4,
+  },
+  trendInsightLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.primary,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  trendInsightHeadline: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.text,
+    lineHeight: 20,
+  },
+  trendInsightDetail: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    lineHeight: 19,
   },
   pointTitle: {
     fontSize: 14,
