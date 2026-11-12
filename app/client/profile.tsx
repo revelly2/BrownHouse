@@ -50,15 +50,7 @@ export default function ProfileScreen() {
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    first_name: profile?.first_name ?? "",
-    last_name: profile?.last_name ?? "",
-    phone_number: profile?.phone_number ?? "",
-    height_cm: profile?.height_cm?.toString() ?? "",
-    weight_kg: profile?.weight_kg?.toString() ?? "",
-    target_weight_kg: profile?.target_weight_kg?.toString() ?? "",
-    fitness_goal: profile?.fitness_goal ?? "",
-  });
+  const [form, setForm] = useState(() => personalFormFrom(profile));
 
   // ── Health & personal details ──
   // Opened from the "fill in your health details" login prompt with ?health=1
@@ -66,16 +58,26 @@ export default function ProfileScreen() {
   const [healthEditing, setHealthEditing] = useState(false);
   const [healthSaving, setHealthSaving] = useState(false);
   const [healthError, setHealthError] = useState<string | null>(null);
-  const [healthForm, setHealthForm] = useState({
-    age: profile?.age?.toString() ?? "",
-    gender: (profile?.gender ?? null) as string | null,
-    hasConditions: hasCompletedHealthScreening(profile) ? (profile?.health_conditions?.length ?? 0) > 0 : (null as boolean | null),
-    conditions: profile?.health_conditions ?? ([] as string[]),
-    notes: profile?.health_notes ?? "",
-  });
+  const [healthForm, setHealthForm] = useState(() => healthFormFrom(profile));
+
+  // Forms copy the saved profile when they open; the screen often mounts before the profile has loaded
+  const openPersonalEdit = () => {
+    if (!editing) setForm(personalFormFrom(profile));
+    setEditing(!editing);
+  };
+  const openHealthEdit = () => {
+    if (!healthEditing) {
+      setHealthForm(healthFormFrom(profile));
+      setHealthError(null);
+    }
+    setHealthEditing(!healthEditing);
+  };
 
   useEffect(() => {
-    if (health && !hasCompletedHealthScreening(profile)) setHealthEditing(true);
+    if (health && !hasCompletedHealthScreening(profile) && !healthEditing) {
+      setHealthForm(healthFormFrom(profile));
+      setHealthEditing(true);
+    }
   }, [health, profile?.health_screened_at]);
 
   const toggleCondition = (condition: string) =>
@@ -199,6 +201,12 @@ export default function ProfileScreen() {
   // Quick-update state for weight/height
   const [quickWeight, setQuickWeight] = useState(profile?.weight_kg?.toString() ?? "");
   const [quickHeight, setQuickHeight] = useState(profile?.height_cm?.toString() ?? "");
+
+  // Fill Quick Update once the saved height/weight arrive or change
+  useEffect(() => {
+    setQuickWeight(profile?.weight_kg?.toString() ?? "");
+    setQuickHeight(profile?.height_cm?.toString() ?? "");
+  }, [profile?.weight_kg, profile?.height_cm]);
   const [quickSaving, setQuickSaving] = useState(false);
 
   const handleQuickUpdate = async () => {
@@ -414,7 +422,7 @@ export default function ProfileScreen() {
           <Text style={styles.formTitle}>Personal Information</Text>
           <TouchableOpacity
             style={styles.editBtn}
-            onPress={() => setEditing(!editing)}
+            onPress={openPersonalEdit}
           >
             <Text style={styles.editBtnText}>{editing ? "Cancel" : "Edit"}</Text>
           </TouchableOpacity>
@@ -520,7 +528,7 @@ export default function ProfileScreen() {
           <Text style={styles.formTitle}>Health & Personal Details</Text>
           <TouchableOpacity
             style={styles.editBtn}
-            onPress={() => setHealthEditing(!healthEditing)}
+            onPress={openHealthEdit}
           >
             <Text style={styles.editBtnText}>{healthEditing ? "Cancel" : "Edit"}</Text>
           </TouchableOpacity>
@@ -765,6 +773,25 @@ export default function ProfileScreen() {
     </ScrollView>
   );
 }
+
+const personalFormFrom = (p: Profile | null) => ({
+  first_name: p?.first_name ?? "",
+  last_name: p?.last_name ?? "",
+  phone_number: p?.phone_number ?? "",
+  height_cm: p?.height_cm?.toString() ?? "",
+  weight_kg: p?.weight_kg?.toString() ?? "",
+  target_weight_kg: p?.target_weight_kg?.toString() ?? "",
+  fitness_goal: p?.fitness_goal ?? "",
+});
+
+const healthFormFrom = (p: Profile | null) => ({
+  age: p?.age?.toString() ?? "",
+  gender: (p?.gender ?? null) as string | null,
+  // null = not answered yet; once screened, "Yes" exactly when conditions were saved
+  hasConditions: hasCompletedHealthScreening(p) ? (p?.health_conditions?.length ?? 0) > 0 : (null as boolean | null),
+  conditions: p?.health_conditions ?? ([] as string[]),
+  notes: p?.health_notes ?? "",
+});
 
 function InfoRow({ label, value, isLast = false }: { label: string; value: string, isLast?: boolean }) {
   return (
